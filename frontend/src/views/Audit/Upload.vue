@@ -25,6 +25,8 @@
             accept=".zip"
             :on-change="handleFileChange"
             :before-upload="beforeUpload"
+            :autofocus="false"
+            :focus="false"
           >
             <div class="upload-area">
               <el-icon class="upload-icon"><UploadFilled /></el-icon>
@@ -157,7 +159,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
@@ -300,6 +302,22 @@ const formatFileSize = (bytes: number): string => {
   const i = Math.floor(Math.log(bytes) / Math.log(k))
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
+
+// 组件挂载时处理焦点问题
+onMounted(() => {
+  // 确保upload组件不会自动获得焦点
+  if (uploadRef.value) {
+    const uploadElement = uploadRef.value.$el
+    if (uploadElement) {
+      uploadElement.blur()
+      // 移除焦点事件监听器，防止无限循环
+      uploadElement.addEventListener('focus', (e) => {
+        e.preventDefault()
+        e.target.blur()
+      }, { capture: true, passive: false })
+    }
+  }
+})
 </script>
 
 <style scoped>

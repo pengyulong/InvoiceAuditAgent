@@ -53,6 +53,11 @@ print('✅ 数据库初始化完成')
 
 # 启动后端服务（后台运行）
 echo "🚀 启动FastAPI服务..."
+# 复制.env文件到backend目录以确保配置正确加载
+if [ -f "../.env" ]; then
+    cp ../.env .env
+    echo "✅ 已复制.env文件到backend目录"
+fi
 nohup uvicorn main:app --host 0.0.0.0 --port 8000 --reload > ../logs/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "✅ 后端服务已启动 (PID: $BACKEND_PID)"

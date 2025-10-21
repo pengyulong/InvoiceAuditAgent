@@ -63,7 +63,9 @@ jspm_packages/
 
 # Optional npm cache directory
 .npm
-
+.playwright-mcp
+.spec-workflow
+.pids
 # Optional eslint cache
 .eslintcache
 

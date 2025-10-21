@@ -2,12 +2,15 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import Optional
 import uuid
+import logging
 
 from app.core.database import get_db
 from app.models.audit import AuditTask, AuditStatus
 from app.services.audit_service import AuditService
-from app.services.celery_app import celery_app
 from pydantic import BaseModel
+
+# 获取日志器
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -29,16 +32,22 @@ async def start_audit(
     """
     开始审计任务
     """
+    logger.info(f"🚀 开始审计请求: task_id={request.task_id}, audit_config={request.audit_config}")
+
     # 验证任务是否存在
     task = db.query(AuditTask).filter(AuditTask.id == request.task_id).first()
     if not task:
+        logger.error(f"❌ 审计任务不存在: task_id={request.task_id}")
         raise HTTPException(
             status_code=404,
             detail="审计任务不存在"
         )
 
+    logger.info(f"✅ 找到审计任务: task_id={task.id}, status={task.status.value}")
+
     # 检查任务状态
     if task.status != AuditStatus.PENDING:
+        logger.error(f"❌ 任务状态不正确: task_id={task.id}, current_status={task.status.value}")
         raise HTTPException(
             status_code=400,
             detail=f"任务状态不正确，当前状态: {task.status.value}"
@@ -47,20 +56,24 @@ async def start_audit(
     try:
         # 创建审计ID
         audit_id = str(uuid.uuid4())
+        logger.info(f"🆔 创建审计ID: audit_id={audit_id}")
 
         # 更新任务状态
         task.status = AuditStatus.PROCESSING
         task.current_step = "准备开始审计"
         task.progress_percentage = 0.0
         db.commit()
+        logger.info(f"✅ 更新任务状态为处理中: task_id={task.id}")
 
         # 启动后台审计任务
+        logger.info(f"📋 准备启动后台审计任务: audit_id={audit_id}, task_id={request.task_id}")
         background_tasks.add_task(
             run_audit_task,
             audit_id=audit_id,
             task_id=request.task_id,
             audit_config=request.audit_config or {}
         )
+        logger.info(f"✅ 后台审计任务已添加到队列: audit_id={audit_id}")
 
         return AuditResponse(
             audit_id=audit_id,
@@ -69,6 +82,7 @@ async def start_audit(
         )
 
     except Exception as e:
+        logger.error(f"❌ 启动审计任务失败: task_id={request.task_id}, error={str(e)}")
         db.rollback()
         raise HTTPException(
             status_code=500,
@@ -238,33 +252,52 @@ async def run_audit_task(audit_id: str, task_id: str, audit_config: dict):
     """
     运行审计任务（后台任务）
     """
-    from app.services.websocket_service import websocket_manager
-    from app.agents.coordinator import CoordinatorAgent
+    logger.info(f"🎬 开始执行后台审计任务: audit_id={audit_id}, task_id={task_id}, audit_config={audit_config}")
 
     try:
+        # 导入模块（在后台任务中导入）
+        logger.info(f"📦 导入服务模块...")
+        from app.services.websocket_service import websocket_manager
+        from app.agents.coordinator import CoordinatorAgent
+        logger.info(f"✅ 服务模块导入成功")
+
         # 发送开始通知
+        logger.info(f"📡 发送审计开始通知: task_id={task_id}")
         await websocket_manager.send_progress(task_id, {
             "step": "开始审计",
             "progress": 0,
             "message": "正在初始化审计流程..."
         })
+        logger.info(f"✅ 开始通知发送成功")
 
         # 创建协调器Agent并执行审计
+        logger.info(f"🤖 创建协调器Agent...")
         coordinator = CoordinatorAgent()
+        logger.info(f"✅ 协调器Agent创建成功")
+
+        logger.info(f"🔍 开始执行协调器审计: task_id={task_id}")
         result = await coordinator.coordinate_audit(task_id, audit_config)
+        logger.info(f"✅ 协调器审计完成: result={result}")
 
         # 发送完成通知
+        logger.info(f"📡 发送审计完成通知: task_id={task_id}")
         await websocket_manager.send_progress(task_id, {
             "step": "审计完成",
             "progress": 100,
             "message": "审计流程已完成"
         })
+        logger.info(f"🎉 审计任务全部完成: audit_id={audit_id}")
 
     except Exception as e:
-        # 发送错误通知
-        await websocket_manager.send_progress(task_id, {
-            "step": "审计失败",
-            "progress": 0,
-            "message": f"审计过程中发生错误: {str(e)}"
-        })
+        logger.error(f"❌ 审计任务执行失败: audit_id={audit_id}, task_id={task_id}, error={str(e)}", exc_info=True)
+        try:
+            # 发送错误通知
+            await websocket_manager.send_progress(task_id, {
+                "step": "审计失败",
+                "progress": 0,
+                "message": f"审计过程中发生错误: {str(e)}"
+            })
+            logger.info(f"📡 错误通知发送成功: task_id={task_id}")
+        except Exception as ws_error:
+            logger.error(f"❌ 发送错误通知失败: task_id={task_id}, ws_error={str(ws_error)}")
         raise

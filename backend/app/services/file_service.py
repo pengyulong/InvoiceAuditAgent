@@ -30,21 +30,38 @@ class FileService:
         """
         保存上传的文件
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"💾 开始保存文件: filename={file.filename}, task_id={task_id}")
+
         # 创建任务目录
         task_dir = self.upload_dir / task_id
         if subfolder:
             task_dir = task_dir / subfolder
         task_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"📁 任务目录创建成功: {task_dir}")
 
         # 生成唯一文件名
         file_ext = Path(file.filename).suffix
         unique_filename = f"{uuid.uuid4()}{file_ext}"
         file_path = task_dir / unique_filename
+        logger.info(f"📝 文件路径: {file_path}")
 
         # 保存文件
-        with open(file_path, "wb") as buffer:
+        try:
+            logger.info("📖 开始读取文件内容...")
             content = await file.read()
-            buffer.write(content)
+            logger.info(f"✅ 文件内容读取完成: {len(content)} bytes")
+
+            logger.info("💽 开始写入文件...")
+            with open(file_path, "wb") as buffer:
+                buffer.write(content)
+            logger.info(f"✅ 文件保存成功: {file_path}")
+
+        except Exception as e:
+            logger.error(f"❌ 文件保存失败: {str(e)}")
+            raise
 
         return str(file_path)
 
@@ -52,41 +69,65 @@ class FileService:
         """
         解压ZIP文件并返回文件列表
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"📦 开始解压ZIP文件: zip_path={zip_path}, task_id={task_id}")
         extracted_files = []
         task_dir = self.upload_dir / task_id
 
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            for file_info in zip_ref.infolist():
-                if file_info.is_dir():
-                    continue
+        try:
+            logger.info("🔍 检查ZIP文件...")
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                file_list = zip_ref.infolist()
+                logger.info(f"📋 ZIP文件包含 {len(file_list)} 个条目")
 
-                # 跳过隐藏文件和系统文件
-                if file_info.filename.startswith(('.', '__MACOSX/')):
-                    continue
+                for i, file_info in enumerate(file_list):
+                    logger.info(f"📄 处理文件 {i+1}/{len(file_list)}: {file_info.filename}")
 
-                # 检查文件类型
-                file_ext = Path(file_info.filename).suffix.lower()
-                if file_ext not in ['.pdf', '.jpg', '.jpeg', '.png']:
-                    continue
+                    if file_info.is_dir():
+                        logger.info(f"📁 跳过目录: {file_info.filename}")
+                        continue
 
-                # 解压文件
-                extracted_path = zip_ref.extract(file_info.filename, task_dir)
+                    # 跳过隐藏文件和系统文件
+                    if file_info.filename.startswith(('.', '__MACOSX/')):
+                        logger.info(f"🚫 跳过系统文件: {file_info.filename}")
+                        continue
 
-                # 确定文件类型
-                file_type = self._determine_file_type(file_info.filename)
+                    # 检查文件类型
+                    file_ext = Path(file_info.filename).suffix.lower()
+                    if file_ext not in ['.pdf', '.jpg', '.jpeg', '.png']:
+                        logger.info(f"🚫 跳过不支持的文件类型: {file_info.filename} ({file_ext})")
+                        continue
 
-                extracted_files.append({
-                    "file_name": os.path.basename(file_info.filename),
-                    "file_path": extracted_path,
-                    "file_size": file_info.file_size,
-                    "file_type": file_type,
-                    "file_ext": file_ext
-                })
+                    # 解压文件
+                    logger.info(f"📤 解压文件: {file_info.filename}")
+                    extracted_path = zip_ref.extract(file_info.filename, task_dir)
+                    logger.info(f"✅ 文件解压成功: {extracted_path}")
 
-        # 删除ZIP文件
-        os.remove(zip_path)
+                    # 确定文件类型
+                    file_type = self._determine_file_type(file_info.filename)
+                    logger.info(f"📋 文件类型识别: {file_info.filename} -> {file_type}")
 
-        return extracted_files
+                    extracted_files.append({
+                        "file_name": os.path.basename(file_info.filename),
+                        "file_path": extracted_path,
+                        "file_size": file_info.file_size,
+                        "file_type": file_type,
+                        "file_ext": file_ext
+                    })
+
+            # 删除ZIP文件
+            logger.info("🗑️ 删除ZIP文件...")
+            os.remove(zip_path)
+            logger.info(f"✅ ZIP文件删除成功: {zip_path}")
+
+            logger.info(f"🎉 文件解压完成: 提取了 {len(extracted_files)} 个有效文件")
+            return extracted_files
+
+        except Exception as e:
+            logger.error(f"❌ ZIP文件解压失败: {str(e)}")
+            raise
 
     def _determine_file_type(self, filename: str) -> str:
         """

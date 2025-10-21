@@ -35,16 +35,58 @@ class CoordinatorAgent:
             if not task:
                 raise ValueError(f"审计任务不存在: {task_id}")
 
-            logger.info(f"开始协调查计任务: {task_id}")
+            logger.info(f"🎬 开始协调查计任务: {task_id}")
+            logger.info(f"📋 任务名称: {task.task_name}")
+
+            # 发送详细的启动日志到WebSocket
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "info",
+                    "message": f"🎬 开始审计任务: {task.task_name}"
+                }
+            })
 
             # 阶段1: 准备和文件分类
-            await self._update_progress(task_id, "准备文件", 5, "正在分类和验证文件...")
+            await self._update_progress(task_id, "📂 准备文件", 5, "正在扫描和分类上传的文件...")
+            logger.info(f"📂 开始文件分类: task_id={task_id}")
+
             files = self._classify_files(task_id)
+            logger.info(f"📋 文件分类完成: 合同={len(files.get('contracts', []))}, 发票={len(files.get('invoices', []))}")
 
             if not files.get("contracts") and not files.get("invoices"):
-                raise ValueError("未找到有效的合同或发票文件")
+                error_msg = "未找到有效的合同或发票文件"
+                logger.error(f"❌ {error_msg}")
+                await websocket_manager.send_message(task_id, {
+                    "type": "log",
+                    "data": {
+                        "timestamp": str(__import__('datetime').datetime.now()),
+                        "level": "error",
+                        "message": f"❌ {error_msg}"
+                    }
+                })
+                raise ValueError(error_msg)
 
-            await self._update_progress(task_id, "文件准备完成", 10, f"发现 {len(files.get('contracts', []))} 份合同，{len(files.get('invoices', []))} 份发票")
+            await self._update_progress(task_id, "✅ 文件准备完成", 10, f"发现 {len(files.get('contracts', []))} 份合同，{len(files.get('invoices', []))} 份发票")
+
+            # 发送文件列表详情
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "info",
+                    "message": f"📄 合同文件: {len(files.get('contracts', []))} 份"
+                }
+            })
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "info",
+                    "message": f"📄 发票文件: {len(files.get('invoices', []))} 份"
+                }
+            })
 
             # 阶段2: 并行分析合同和发票
             contract_results = []
@@ -52,31 +94,101 @@ class CoordinatorAgent:
 
             # 分析合同
             if files.get("contracts"):
-                await self._update_progress(task_id, "分析合同", 20, "正在使用AI分析合同内容...")
+                await self._update_progress(task_id, "📝 分析合同", 20, "正在使用AI分析合同内容...")
+                logger.info(f"📝 开始分析合同: {len(files['contracts'])} 份")
+
+                await websocket_manager.send_message(task_id, {
+                    "type": "log",
+                    "data": {
+                        "timestamp": str(__import__('datetime').datetime.now()),
+                        "level": "info",
+                        "message": f"🤖 启动AI合同分析器..."
+                    }
+                })
+
+                for i, contract_file in enumerate(files["contracts"]):
+                    contract_name = contract_file.split('/')[-1]
+                    await websocket_manager.send_message(task_id, {
+                        "type": "log",
+                        "data": {
+                            "timestamp": str(__import__('datetime').datetime.now()),
+                            "level": "info",
+                            "message": f"📄 分析合同 [{i+1}/{len(files['contracts'])}]: {contract_name}"
+                        }
+                    })
+
                 contract_results = await self.contract_analyzer.analyze_contracts(
                     files["contracts"], task_id
                 )
-                await self._update_progress(task_id, "合同分析完成", 40, f"成功分析 {len(contract_results)} 份合同")
+                await self._update_progress(task_id, "✅ 合同分析完成", 40, f"成功分析 {len(contract_results)} 份合同")
+                logger.info(f"✅ 合同分析完成: {len(contract_results)} 份")
 
             # 分析发票
             if files.get("invoices"):
-                await self._update_progress(task_id, "分析发票", 50, "正在使用AI分析发票内容...")
+                await self._update_progress(task_id, "💰 分析发票", 50, "正在使用AI分析发票内容...")
+                logger.info(f"💰 开始分析发票: {len(files['invoices'])} 份")
+
+                await websocket_manager.send_message(task_id, {
+                    "type": "log",
+                    "data": {
+                        "timestamp": str(__import__('datetime').datetime.now()),
+                        "level": "info",
+                        "message": f"🤖 启动AI发票分析器..."
+                    }
+                })
+
+                for i, invoice_file in enumerate(files["invoices"]):
+                    invoice_name = invoice_file.split('/')[-1]
+                    await websocket_manager.send_message(task_id, {
+                        "type": "log",
+                        "data": {
+                            "timestamp": str(__import__('datetime').datetime.now()),
+                            "level": "info",
+                            "message": f"📄 分析发票 [{i+1}/{len(files['invoices'])}]: {invoice_name}"
+                        }
+                    })
+
                 invoice_results = await self.invoice_analyzer.analyze_invoices(
                     files["invoices"], task_id
                 )
-                await self._update_progress(task_id, "发票分析完成", 70, f"成功分析 {len(invoice_results)} 份发票")
+                await self._update_progress(task_id, "✅ 发票分析完成", 70, f"成功分析 {len(invoice_results)} 份发票")
+                logger.info(f"✅ 发票分析完成: {len(invoice_results)} 份")
 
             # 阶段3: 交叉验证
-            await self._update_progress(task_id, "交叉验证", 75, "正在进行合同与发票的交叉验证...")
+            await self._update_progress(task_id, "🔍 交叉验证", 75, "正在进行合同与发票的交叉验证...")
+            logger.info(f"🔍 开始交叉验证: task_id={task_id}")
+
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "info",
+                    "message": f"🔍 启动交叉验证器..."
+                }
+            })
+
             validation_results = await self.cross_validator.validate(
                 contract_results, invoice_results, task_id
             )
+            logger.info(f"✅ 交叉验证完成: task_id={task_id}")
 
             # 阶段4: 生成综合报告
-            await self._update_progress(task_id, "生成报告", 90, "正在生成审计报告...")
+            await self._update_progress(task_id, "📊 生成报告", 90, "正在生成审计报告...")
+            logger.info(f"📊 开始生成报告: task_id={task_id}")
+
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "info",
+                    "message": f"📊 正在生成综合审计报告..."
+                }
+            })
+
             report = await self._generate_audit_report(
                 task_id, contract_results, invoice_results, validation_results
             )
+            logger.info(f"✅ 报告生成完成: task_id={task_id}")
 
             # 更新任务状态
             task.status = AuditStatus.COMPLETED
@@ -85,12 +197,35 @@ class CoordinatorAgent:
             task.processed_files = len(files.get("contracts", [])) + len(files.get("invoices", []))
             db.commit()
 
-            await self._update_progress(task_id, "审计完成", 100, "审计流程已完成")
+            await self._update_progress(task_id, "🎉 审计完成", 100, "审计流程已完成")
+
+            # 发送完成前的详细日志
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "success",
+                    "message": f"🎉 审计流程已完成！"
+                }
+            })
+
+            # 发送统计摘要
+            issues_count = len(validation_results.get("issues", []))
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "info",
+                    "message": f"📊 发现 {issues_count} 个问题需要关注"
+                }
+            })
 
             # 发送完成通知
             await websocket_manager.send_audit_completed(task_id, report)
 
-            logger.info(f"审计任务完成: {task_id}")
+            logger.info(f"🎉 审计任务完成: {task_id}")
+            logger.info(f"📊 审计摘要: 合同={len(contract_results)}, 发票={len(invoice_results)}, 问题={issues_count}")
+
             return {
                 "task_id": task_id,
                 "status": "completed",
@@ -110,7 +245,27 @@ class CoordinatorAgent:
                 task.error_message = str(e)
                 db.commit()
 
-            logger.error(f"审计任务失败: {task_id}, 错误: {e}")
+            logger.error(f"❌ 审计任务失败: {task_id}, 错误: {e}")
+
+            # 发送详细的错误日志到前端
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "error",
+                    "message": f"❌ 审计过程发生错误: {str(e)}"
+                }
+            })
+
+            await websocket_manager.send_message(task_id, {
+                "type": "log",
+                "data": {
+                    "timestamp": str(__import__('datetime').datetime.now()),
+                    "level": "warning",
+                    "message": "💡 请检查文件格式或稍后重试"
+                }
+            })
+
             await websocket_manager.send_error(task_id, f"审计过程发生错误: {str(e)}")
 
             raise

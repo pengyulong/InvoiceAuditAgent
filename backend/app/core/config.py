@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
 import os
 
@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     ALLOWED_HOSTS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
         "http://localhost:8080",
         "http://127.0.0.1:8080"
     ]
@@ -31,7 +33,7 @@ class Settings(BaseSettings):
     # AI模型API配置
     QWEN_API_BASE: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     QWEN_API_KEY: Optional[str] = None
-    QWEN_MODEL: str = "qwen3-vl-8b-thinking"
+    QWEN_MODEL: str = "qwen3-vl-plus"
 
     DEEPSEEK_API_BASE: str = "https://api.deepseek.com/v1"
     DEEPSEEK_API_KEY: Optional[str] = None
@@ -48,7 +50,7 @@ class Settings(BaseSettings):
 
     # 日志配置
     LOG_LEVEL: str = "INFO"
-    LOG_FILE: str = "./logs/app.log"
+    LOG_FILE: str = "../logs/backend.log"
 
     # WebSocket配置
     WS_HEARTBEAT_INTERVAL: int = 30
@@ -57,9 +59,11 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_AUDITS: int = 5
     AUDIT_TIMEOUT: int = 300  # 5分钟
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file="../.env",  # 从backend目录查找项目根目录的.env
+        case_sensitive=True,
+        extra="allow"
+    )
 
 # 创建全局设置实例
 settings = Settings()

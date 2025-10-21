@@ -7,11 +7,16 @@ import uuid
 import zipfile
 import tempfile
 from pathlib import Path
+import logging
+import asyncio
 
 from app.core.database import get_db
 from app.core.config import settings
 from app.services.file_service import FileService
 from app.models.audit import AuditTask, AuditStatus
+
+# 获取日志器
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -23,22 +28,32 @@ async def upload_zip_file(
     """
     上传ZIP文件（包含合同和发票）
     """
-    # 验证文件类型
-    if not file.filename.endswith('.zip'):
-        raise HTTPException(
-            status_code=400,
-            detail="只支持ZIP格式文件"
-        )
+    logger.info(f"🚀 开始处理ZIP文件上传: filename={file.filename}, size={file.size}")
 
-    # 验证文件大小
-    if file.size > settings.MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"文件大小超过限制({settings.MAX_FILE_SIZE} bytes)"
-        )
-
+    # 添加超时处理
     try:
+        # 验证文件类型
+        logger.info(f"📋 验证文件类型: {file.filename}")
+        if not file.filename or not file.filename.endswith('.zip'):
+            error_msg = "只支持ZIP格式文件"
+            logger.error(f"❌ 文件类型验证失败: {error_msg}")
+            raise HTTPException(
+                status_code=400,
+                detail=error_msg
+            )
+
+        # 验证文件大小
+        logger.info(f"📏 验证文件大小: {file.size} bytes")
+        if file.size and file.size > settings.MAX_FILE_SIZE:
+            error_msg = f"文件大小超过限制({settings.MAX_FILE_SIZE} bytes)"
+            logger.error(f"❌ 文件大小验证失败: {error_msg}")
+            raise HTTPException(
+                status_code=400,
+                detail=error_msg
+            )
+
         # 创建审计任务
+        logger.info("🆔 创建审计任务...")
         task_id = str(uuid.uuid4())
         audit_task = AuditTask(
             id=task_id,
@@ -46,19 +61,75 @@ async def upload_zip_file(
             status=AuditStatus.PENDING,
             total_files=0
         )
-        db.add(audit_task)
-        db.commit()
+
+        # 使用超时机制进行数据库操作
+        try:
+            db.add(audit_task)
+            db.commit()
+            logger.info(f"✅ 审计任务创建成功: task_id={task_id}")
+        except Exception as db_error:
+            logger.error(f"❌ 数据库操作失败: {str(db_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail="数据库操作失败"
+            )
 
         # 保存ZIP文件
+        logger.info("💾 保存ZIP文件...")
         file_service = FileService()
-        zip_path = await file_service.save_uploaded_file(file, task_id)
+
+        try:
+            # 添加文件读取超时
+            zip_path = await asyncio.wait_for(
+                file_service.save_uploaded_file(file, task_id),
+                timeout=30.0  # 30秒超时
+            )
+            logger.info(f"✅ ZIP文件保存成功: {zip_path}")
+        except asyncio.TimeoutError:
+            logger.error("❌ 文件保存超时")
+            raise HTTPException(
+                status_code=408,
+                detail="文件保存超时"
+            )
+        except Exception as save_error:
+            logger.error(f"❌ 文件保存失败: {str(save_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"文件保存失败: {str(save_error)}"
+            )
 
         # 解压并分析文件
-        extracted_files = await file_service.extract_zip_file(zip_path, task_id)
+        logger.info("📦 解压并分析文件...")
+
+        try:
+            # 添加解压超时
+            extracted_files = await asyncio.wait_for(
+                file_service.extract_zip_file(zip_path, task_id),
+                timeout=60.0  # 60秒超时
+            )
+            logger.info(f"✅ 文件解压成功: 提取了{len(extracted_files)}个文件")
+        except asyncio.TimeoutError:
+            logger.error("❌ 文件解压超时")
+            raise HTTPException(
+                status_code=408,
+                detail="文件解压超时"
+            )
+        except Exception as extract_error:
+            logger.error(f"❌ 文件解压失败: {str(extract_error)}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"文件解压失败: {str(extract_error)}"
+            )
 
         # 统计文件数量
-        audit_task.total_files = len(extracted_files)
-        db.commit()
+        try:
+            audit_task.total_files = len(extracted_files)
+            db.commit()
+            logger.info(f"✅ 任务更新成功: total_files={len(extracted_files)}")
+        except Exception as update_error:
+            logger.error(f"❌ 任务更新失败: {str(update_error)}")
+
+        logger.info(f"🎉 ZIP文件上传处理完成: task_id={task_id}")
 
         return {
             "code": 200,
@@ -72,8 +143,17 @@ async def upload_zip_file(
             }
         }
 
+    except HTTPException:
+        # 重新抛出HTTP异常
+        raise
     except Exception as e:
-        db.rollback()
+        logger.error(f"❌ 上传处理过程中发生未预期错误: {str(e)}", exc_info=True)
+        try:
+            db.rollback()
+            logger.info("✅ 数据库回滚完成")
+        except Exception as rollback_error:
+            logger.error(f"❌ 数据库回滚失败: {str(rollback_error)}")
+
         raise HTTPException(
             status_code=500,
             detail=f"文件处理失败: {str(e)}"
