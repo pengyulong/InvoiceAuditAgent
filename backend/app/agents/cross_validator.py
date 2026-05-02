@@ -1,553 +1,254 @@
-"""
-交叉验证Agent - 负责合同与发票的交叉验证
-"""
-
-import asyncio
+"""交叉验证Agent - 使用DeepSeek模型验证合同与发票的一致性"""
 import json
-from typing import Dict, Any, List, Optional
-from sqlalchemy.orm import Session
+import logging
+from typing import Dict, Any, List
 
-from app.models.contract import Contract
-from app.models.invoice import Invoice
-from app.models.audit import SeverityLevel
-from app.services.ai_service import AIService
+from app.agents.base import BaseAgent, AgentError
+from app.services.ai_service import ai_service, AIServiceError
+
+logger = logging.getLogger(__name__)
 
 
-class CrossValidator:
-    """交叉验证Agent"""
+class CrossValidator(BaseAgent):
+    """交叉验证Agent，验证合同与发票的匹配性、一致性和合规性"""
 
     def __init__(self):
-        self.ai_service = AIService()
+        super().__init__(name="cross_validator", agent_type="cross_validator")
 
-    async def validate(
+    async def _execute(
         self,
-        contract_results: List[Dict],
-        invoice_results: List[Dict],
-        task_id: str,
-        websocket_manager=None
+        contract_info: Dict[str, Any] = None,
+        invoice_list: List[Dict[str, Any]] = None,
+        config: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
-        """
-        执行交叉验证
+        contract_info = contract_info or {}
+        invoice_list = invoice_list or []
+        config = config or {}
 
-        Args:
-            contract_results: 合同分析结果列表
-            invoice_results: 发票分析结果列表
-            task_id: 任务ID
-            websocket_manager: WebSocket管理器
+        await self._report_progress(10.0, "验证合同-发票信息匹配...")
 
-        Returns:
-            验证结果
-        """
-        results = {
-            "overall_status": "需人工复核",
-            "match_score": 0,
-            "issues": [],
-            "summary": "交叉验证完成"
-        }
-
-        try:
-            # 发送进度更新
-            if websocket_manager:
-                await websocket_manager.send_progress(
-                    task_id, 75, "正在进行合同与发票的交叉验证..."
-                )
-
-            # 验证数据完整性
-            if not contract_results and not invoice_results:
-                results["issues"].append({
-                    "type": "数据缺失",
-                    "severity": "high",
-                    "description": "未找到合同或发票分析结果",
-                    "affected_items": ["所有数据"]
-                })
-                return results
-
-            # 使用AI进行综合验证
-            if contract_results and invoice_results:
-                validation_request = {
-                    "contract_data": [result.get("extracted_data", {}) for result in contract_results],
-                    "invoices_data": [result.get("extracted_data", {}) for result in invoice_results]
-                }
-
-                ai_result = await self.ai_service.validate_with_llm(validation_request)
-
-                if ai_result.get("success"):
-                    validation_result = ai_result.get("validation_result", {})
-                    results.update({
-                        "overall_status": validation_result.get("overall_status", "需人工复核"),
-                        "match_score": validation_result.get("match_score", 0),
-                        "issues": validation_result.get("issues", []),
-                        "summary": validation_result.get("summary", "交叉验证完成")
-                    })
-                else:
-                    # AI验证失败，进行基础规则验证
-                    results = self._basic_validation(contract_results, invoice_results, results)
-            else:
-                # 只有合同或只有发票，进行部分验证
-                results = self._partial_validation(contract_results, invoice_results, results)
-
-            # 发送完成状态
-            if websocket_manager:
-                await websocket_manager.send_progress(
-                    task_id, 90, "交叉验证完成"
-                )
-
-        except Exception as e:
-            results["issues"].append({
-                "type": "验证错误",
-                "severity": "high",
-                "description": "交叉验证过程发生错误",
-                "affected_items": ["验证流程"],
-                "details": str(e)
-            })
-
-        return results
-
-    def _basic_validation(self, contract_results: List[Dict], invoice_results: List[Dict], results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        基础规则验证（当AI验证失败时的备用方案）
-        """
+        # 基础规则验证（不依赖AI）
         issues = []
+        issues.extend(self._check_amount_consistency(contract_info, invoice_list))
+        issues.extend(self._check_party_match(contract_info, invoice_list))
+        issues.extend(self._check_duplicates(invoice_list))
+        issues.extend(self._check_item_coverage(contract_info, invoice_list))
 
-        # 金额一致性检查
-        contract_total = sum(result.get("extracted_data", {}).get("total_amount", 0) for result in contract_results)
-        invoice_total = sum(result.get("extracted_data", {}).get("total_amount", 0) for result in invoice_results)
+        # 计算覆盖率
+        coverage = self._calculate_coverage(contract_info, invoice_list)
 
-        if abs(contract_total - invoice_total) > 0:
-            issues.append({
-                "type": "金额不一致",
-                "severity": "medium",
-                "description": f"合同总金额与发票总金额存在差异",
-                "affected_items": ["金额计算"],
-                "details": f"合同金额: {contract_total}, 发票金额: {invoice_total}"
-            })
+        await self._report_progress(50.0, f"基础验证完成, 发现 {len(issues)} 个问题")
 
-        # 数据完整性检查
-        for i, contract in enumerate(contract_results):
-            extracted = contract.get("extracted_data", {})
-            if not extracted.get("contract_number"):
-                issues.append({
-                    "type": "合同信息缺失",
-                    "severity": "medium",
-                    "description": f"第{i+1}份合同缺少合同编号",
-                    "affected_items": [f"合同{i+1}"]
-                })
-
-        for i, invoice in enumerate(invoice_results):
-            extracted = invoice.get("extracted_data", {})
-            if not extracted.get("invoice_number"):
-                issues.append({
-                    "type": "发票信息缺失",
-                    "severity": "medium",
-                    "description": f"第{i+1}份发票缺少发票号码",
-                    "affected_items": [f"发票{i+1}"]
-                })
-
-        # 计算匹配分数
-        match_score = max(0, 100 - len(issues) * 10)
-
-        results.update({
-            "overall_status": "通过" if match_score >= 80 else "需人工复核",
-            "match_score": match_score,
-            "issues": issues,
-            "summary": f"基础验证完成，发现{len(issues)}个问题"
-        })
-
-        return results
-
-    def _partial_validation(self, contract_results: List[Dict], invoice_results: List[Dict], results: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        部分验证（只有合同或只有发票的情况）
-        """
-        issues = []
-
-        if contract_results and not invoice_results:
-            issues.append({
-                "type": "缺少发票",
-                "severity": "high",
-                "description": "未找到相关发票进行匹配",
-                "affected_items": ["发票匹配"]
-            })
-        elif invoice_results and not contract_results:
-            issues.append({
-                "type": "缺少合同",
-                "severity": "high",
-                "description": "未找到相关合同进行匹配",
-                "affected_items": ["合同匹配"]
-            })
-
-        results.update({
-            "overall_status": "需人工复核",
-            "match_score": 50,
-            "issues": issues,
-            "summary": "部分验证完成，建议补充相关文件"
-        })
-
-        return results
-
-    async def _validate_contract_basic_info(
-        self,
-        contracts: List[Contract],
-        results: Dict[str, Any],
-        websocket_manager=None,
-        task_id: str = None
-    ):
-        """验证合同基本信息"""
-        if websocket_manager:
-            await websocket_manager.send_progress_update(
-                task_id, 75, "验证合同基本信息..."
-            )
-
-        for i, contract in enumerate(contracts):
-            try:
-                # 使用AI验证合同信息完整性
-                prompt = f"""
-                请验证以下合同信息的完整性和准确性：
-
-                合同编号: {contract.contract_number or '未填写'}
-                合同名称: {contract.contract_name or '未填写'}
-                甲方: {contract.party_a or '未填写'}
-                乙方: {contract.party_b or '未填写'}
-                合同金额: {contract.contract_amount or '未填写'}
-                签订日期: {contract.sign_date or '未填写'}
-
-                请检查：
-                1. 必要信息是否完整
-                2. 格式是否规范
-                3. 是否有明显错误
-
-                返回JSON格式结果：
-                {{
-                    "is_valid": true/false,
-                    "issues": ["问题1", "问题2"],
-                    "confidence": 0.95
-                }}
-                """
-
-                response = await self.ai_service.analyze_contract(contract.extracted_data or {}, prompt)
-
-                if response and "is_valid" in response:
-                    results["total_validations"] += 1
-                    if response["is_valid"]:
-                        results["passed_validations"] += 1
-                    else:
-                        results["failed_validations"] += 1
-                        for issue in response.get("issues", []):
-                            results["issues"].append({
-                                "type": "contract_info_error",
-                                "severity": SeverityLevel.MEDIUM.value,
-                                "description": f"合同 {contract.contract_number} 信息问题",
-                                "details": issue,
-                                "contract_id": contract.id
-                            })
-
-            except Exception as e:
-                results["issues"].append({
-                    "type": "contract_validation_error",
-                    "severity": SeverityLevel.LOW.value,
-                    "description": f"合同 {contract.contract_number} 验证失败",
-                    "details": str(e),
-                    "contract_id": contract.id
-                })
-
-    async def _validate_invoice_basic_info(
-        self,
-        invoices: List[Invoice],
-        results: Dict[str, Any],
-        websocket_manager=None,
-        task_id: str = None
-    ):
-        """验证发票基本信息"""
-        if websocket_manager:
-            await websocket_manager.send_progress_update(
-                task_id, 78, "验证发票基本信息..."
-            )
-
-        for i, invoice in enumerate(invoices):
-            try:
-                # 使用AI验证发票信息完整性
-                prompt = f"""
-                请验证以下发票信息的完整性和准确性：
-
-                发票号码: {invoice.invoice_number or '未填写'}
-                发票代码: {invoice.invoice_code or '未填写'}
-                开票日期: {invoice.issue_date or '未填写'}
-                销售方: {invoice.seller or '未填写'}
-                购买方: {invoice.buyer or '未填写'}
-                发票金额: {invoice.total_amount or '未填写'}
-
-                请检查：
-                1. 必要信息是否完整
-                2. 发票格式是否规范
-                3. 金额是否合理
-
-                返回JSON格式结果：
-                {{
-                    "is_valid": true/false,
-                    "issues": ["问题1", "问题2"],
-                    "confidence": 0.95
-                }}
-                """
-
-                response = await self.ai_service.analyze_invoice(invoice.extracted_data or {}, prompt)
-
-                if response and "is_valid" in response:
-                    results["total_validations"] += 1
-                    if response["is_valid"]:
-                        results["passed_validations"] += 1
-                    else:
-                        results["failed_validations"] += 1
-                        for issue in response.get("issues", []):
-                            results["issues"].append({
-                                "type": "invoice_info_error",
-                                "severity": SeverityLevel.MEDIUM.value,
-                                "description": f"发票 {invoice.invoice_number} 信息问题",
-                                "details": issue,
-                                "invoice_id": invoice.id
-                            })
-
-            except Exception as e:
-                results["issues"].append({
-                    "type": "invoice_validation_error",
-                    "severity": SeverityLevel.LOW.value,
-                    "description": f"发票 {invoice.invoice_number} 验证失败",
-                    "details": str(e),
-                    "invoice_id": invoice.id
-                })
-
-    async def _validate_contract_invoice_matching(
-        self,
-        contracts: List[Contract],
-        invoices: List[Invoice],
-        results: Dict[str, Any],
-        websocket_manager=None,
-        task_id: str = None
-    ):
-        """验证合同发票匹配"""
-        if websocket_manager:
-            await websocket_manager.send_progress_update(
-                task_id, 82, "验证合同发票匹配..."
-            )
-
-        # 构建匹配验证提示
-        contract_info = []
-        for contract in contracts:
-            contract_info.append({
-                "id": contract.id,
-                "number": contract.contract_number,
-                "name": contract.contract_name,
-                "party_a": contract.party_a,
-                "party_b": contract.party_b,
-                "amount": contract.contract_amount
-            })
-
-        invoice_info = []
-        for invoice in invoices:
-            invoice_info.append({
-                "id": invoice.id,
-                "number": invoice.invoice_number,
-                "seller": invoice.seller,
-                "buyer": invoice.buyer,
-                "amount": invoice.total_amount
-            })
-
+        # 尝试AI深度分析
+        ai_validated = False
         try:
-            prompt = f"""
-            请分析以下合同和发票的匹配关系：
+            if not contract_info.get("_fallback") and invoice_list:
+                await self._report_progress(60.0, "正在进行AI深度分析...")
+                ai_result = await ai_service.analyze_contract_compliance(
+                    contract_info, invoice_list
+                )
+                if ai_result:
+                    ai_issues = self._filter_actionable_issues(ai_result.get("issues", []))
+                    issues.extend(ai_issues)
+                    ai_validated = True
+                    logger.info(f"AI交叉验证完成, 额外发现 {len(ai_issues)} 个问题")
+        except AIServiceError as e:
+            logger.warning(f"AI交叉验证失败，使用基础验证结果: {e}")
 
-            合同信息：
-            {json.dumps(contract_info, ensure_ascii=False, indent=2)}
-
-            发票信息：
-            {json.dumps(invoice_info, ensure_ascii=False, indent=2)}
-
-            请检查：
-            1. 发票的购买方/销售方是否与合同的甲乙方匹配
-            2. 发票金额是否在合同金额范围内
-            3. 时间是否合理
-
-            返回JSON格式结果：
-            {{
-                "matches": [
-                    {{
-                        "contract_id": "合同ID",
-                        "invoice_id": "发票ID",
-                        "match_score": 0.95,
-                        "issues": ["匹配问题1"]
-                    }}
-                ],
-                "unmatched_contracts": ["合同ID"],
-                "unmatched_invoices": ["发票ID"],
-                "confidence": 0.90
-            }}
-            """
-
-            # 这里需要调用AI服务进行匹配分析
-            # 由于需要具体的AI服务实现，这里提供模拟结果
-            matches = []
-            for contract in contracts:
-                for invoice in invoices:
-                    # 简单的匹配逻辑：检查金额和主体
-                    if (contract.party_a and invoice.buyer and
-                        (contract.party_a in invoice.buyer or invoice.buyer in contract.party_a)):
-                        matches.append({
-                            "contract_id": contract.id,
-                            "invoice_id": invoice.id,
-                            "match_score": 0.85,
-                            "issues": []
-                        })
-
-            results["total_validations"] += 1
-            if matches:
-                results["passed_validations"] += 1
-            else:
-                results["failed_validations"] += 1
-                results["issues"].append({
-                    "type": "matching_error",
-                    "severity": SeverityLevel.HIGH.value,
-                    "description": "合同与发票匹配失败",
-                    "details": "未找到有效的合同发票匹配关系"
-                })
-
-        except Exception as e:
-            results["issues"].append({
-                "type": "matching_validation_error",
-                "severity": SeverityLevel.MEDIUM.value,
-                "description": "合同发票匹配验证失败",
-                "details": str(e)
-            })
-
-    async def _validate_amount_consistency(
-        self,
-        contracts: List[Contract],
-        invoices: List[Invoice],
-        results: Dict[str, Any],
-        websocket_manager=None,
-        task_id: str = None
-    ):
-        """验证金额一致性"""
-        if websocket_manager:
-            await websocket_manager.send_progress_update(
-                task_id, 86, "验证金额一致性..."
-            )
-
-        try:
-            # 计算合同总金额和发票总金额
-            total_contract_amount = sum(
-                float(c.contract_amount or 0) for c in contracts
-            )
-            total_invoice_amount = sum(
-                float(i.total_amount or 0) for i in invoices
-            )
-
-            # 金额一致性检查
-            amount_diff = abs(total_contract_amount - total_invoice_amount)
-            tolerance_rate = 0.05  # 5% 容差
-
-            results["total_validations"] += 1
-            if amount_diff <= total_contract_amount * tolerance_rate:
-                results["passed_validations"] += 1
-            else:
-                results["failed_validations"] += 1
-                results["issues"].append({
-                    "type": "amount_inconsistency",
-                    "severity": SeverityLevel.HIGH.value,
-                    "description": "合同与发票金额不一致",
-                    "details": f"合同总金额: {total_contract_amount}, 发票总金额: {total_invoice_amount}, 差异: {amount_diff}"
-                })
-
-        except Exception as e:
-            results["issues"].append({
-                "type": "amount_validation_error",
-                "severity": SeverityLevel.MEDIUM.value,
-                "description": "金额一致性验证失败",
-                "details": str(e)
-            })
-
-    async def _validate_time_consistency(
-        self,
-        contracts: List[Contract],
-        invoices: List[Invoice],
-        results: Dict[str, Any],
-        websocket_manager=None,
-        task_id: str = None
-    ):
-        """验证时间一致性"""
-        if websocket_manager:
-            await websocket_manager.send_progress_update(
-                task_id, 88, "验证时间一致性..."
-            )
-
-        try:
-            # 检查发票时间是否在合同时间之后
-            time_issues = []
-
-            for contract in contracts:
-                if not contract.sign_date:
-                    continue
-
-                contract_date = contract.sign_date
-                for invoice in invoices:
-                    if not invoice.issue_date:
-                        continue
-
-                    invoice_date = invoice.issue_date
-                    if invoice_date < contract_date:
-                        time_issues.append({
-                            "contract_id": contract.id,
-                            "invoice_id": invoice.id,
-                            "issue": "发票日期早于合同签订日期"
-                        })
-
-            results["total_validations"] += 1
-            if not time_issues:
-                results["passed_validations"] += 1
-            else:
-                results["failed_validations"] += 1
-                for issue in time_issues:
-                    results["issues"].append({
-                        "type": "time_inconsistency",
-                        "severity": SeverityLevel.MEDIUM.value,
-                        "description": "时间逻辑不一致",
-                        "details": issue["issue"],
-                        "contract_id": issue["contract_id"],
-                        "invoice_id": issue["invoice_id"]
-                    })
-
-        except Exception as e:
-            results["issues"].append({
-                "type": "time_validation_error",
-                "severity": SeverityLevel.LOW.value,
-                "description": "时间一致性验证失败",
-                "details": str(e)
-            })
-
-    def _generate_validation_summary(self, results: Dict[str, Any]) -> Dict[str, Any]:
-        """生成验证摘要"""
-        total = results["total_validations"]
-        passed = results["passed_validations"]
-        failed = results["failed_validations"]
-
-        success_rate = (passed / total * 100) if total > 0 else 0
-
-        # 按严重程度统计问题
-        severity_count = {
-            "critical": 0,
-            "high": 0,
-            "medium": 0,
-            "low": 0
-        }
-
-        for issue in results["issues"]:
-            severity = issue.get("severity", "low")
-            severity_count[severity] = severity_count.get(severity, 0) + 1
+        await self._report_progress(90.0, f"交叉验证完成, 共 {len(issues)} 个问题")
 
         return {
-            "total_validations": total,
-            "passed_validations": passed,
-            "failed_validations": failed,
-            "success_rate": round(success_rate, 2),
-            "total_issues": len(results["issues"]),
-            "severity_distribution": severity_count,
-            "validation_status": "passed" if success_rate >= 80 else "failed"
+            "compliance_status": self._determine_status(issues),
+            "overall_score": self._calculate_score(issues, coverage),
+            "issues": issues,
+            "ai_validated": ai_validated,
+            "summary": {
+                "contract_amount": contract_info.get("total_amount", 0) or 0,
+                "total_invoice_amount": sum(
+                    inv.get("total_amount", 0) or 0 for inv in invoice_list
+                ),
+                "coverage_rate": coverage,
+                "issue_count": len(issues),
+                "duplicate_invoices": sum(1 for inv in invoice_list if inv.get("is_duplicate")),
+            },
         }
+
+    @staticmethod
+    def _filter_actionable_issues(issues: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """过滤AI输出中被误放进issues的合规说明。"""
+        positive_words = ["一致", "匹配", "合规", "正常", "无异常", "未发现问题"]
+        negative_words = ["不一致", "不匹配", "缺失", "异常", "风险", "错误", "无法", "超过", "为空"]
+        actionable = []
+        for issue in issues or []:
+            text = f"{issue.get('title', '')} {issue.get('description', '')}"
+            is_positive = any(word in text for word in positive_words)
+            is_negative = any(word in text for word in negative_words)
+            if is_positive and not is_negative:
+                continue
+            actionable.append(issue)
+        return actionable
+
+    def _check_amount_consistency(
+        self, contract: Dict, invoices: List[Dict]
+    ) -> List[Dict]:
+        """检查金额一致性"""
+        issues = []
+        contract_amount = contract.get("total_amount") or 0
+        if not contract_amount:
+            return issues
+
+        total_invoice = sum(inv.get("total_amount", 0) or 0 for inv in invoices)
+        if total_invoice <= 0:
+            return issues
+
+        diff = abs(contract_amount - total_invoice)
+        diff_pct = diff / contract_amount
+
+        if diff_pct > 0.2:
+            issues.append({
+                "type": "amount_mismatch",
+                "severity": "high",
+                "title": "金额严重不符",
+                "description": f"合同金额 {contract_amount:.2f} 与发票总额 {total_invoice:.2f} 差异 {diff_pct:.1%}",
+                "recommendation": "请核实是否存在未上传的发票或合同金额有误",
+            })
+        elif diff_pct > 0.05:
+            issues.append({
+                "type": "amount_mismatch",
+                "severity": "medium",
+                "title": "金额存在差异",
+                "description": f"合同金额 {contract_amount:.2f} 与发票总额 {total_invoice:.2f} 差异 {diff:.2f}",
+                "recommendation": "建议核实差异原因，确认是否部分交货",
+            })
+
+        return issues
+
+    def _check_party_match(
+        self, contract: Dict, invoices: List[Dict]
+    ) -> List[Dict]:
+        """检查买卖双方信息匹配"""
+        issues = []
+        contract_buyer = (contract.get("buyer_name") or "").strip()
+        contract_seller = (contract.get("seller_name") or "").strip()
+
+        if not contract_buyer and not contract_seller:
+            return issues
+
+        for inv in invoices:
+            inv_buyer = (inv.get("buyer_name") or "").strip()
+            inv_seller = (inv.get("seller_name") or "").strip()
+            inv_num = inv.get("invoice_number", "unknown")
+
+            if contract_buyer and inv_buyer and contract_buyer != inv_buyer:
+                issues.append({
+                    "type": "party_mismatch",
+                    "severity": "high",
+                    "title": "买方信息不匹配",
+                    "description": f"发票 {inv_num} 买方'{inv_buyer}'与合同买方'{contract_buyer}'不一致",
+                    "recommendation": "请核实是否为关联公司或开票错误",
+                })
+
+            if contract_seller and inv_seller and contract_seller != inv_seller:
+                issues.append({
+                    "type": "party_mismatch",
+                    "severity": "high",
+                    "title": "卖方信息不匹配",
+                    "description": f"发票 {inv_num} 卖方'{inv_seller}'与合同卖方'{contract_seller}'不一致",
+                    "recommendation": "请核实供应商信息",
+                })
+
+        return issues
+
+    def _check_duplicates(self, invoices: List[Dict]) -> List[Dict]:
+        """汇总重复发票问题"""
+        duplicates = [inv for inv in invoices if inv.get("is_duplicate")]
+        if not duplicates:
+            return []
+
+        return [{
+            "type": "duplicate",
+            "severity": "medium",
+            "title": "发现重复发票",
+            "description": f"发现 {len(duplicates)} 张重复发票: " + ", ".join(
+                d.get("invoice_number", "unknown") for d in duplicates
+            ),
+            "recommendation": "请核实是否为重复报销，如是请作废重复发票",
+        }]
+
+    def _check_item_coverage(
+        self, contract: Dict, invoices: List[Dict]
+    ) -> List[Dict]:
+        """检查商品清单匹配"""
+        issues = []
+        contract_items = contract.get("product_list") or []
+        if not contract_items:
+            return issues
+
+        invoice_items = []
+        for inv in invoices:
+            items = inv.get("product_list") or []
+            invoice_items.extend(items)
+
+        contract_names = {str(item.get("name", "") or "") for item in contract_items if item.get("name")}
+        invoice_names = {str(item.get("name", "") or "") for item in invoice_items if item.get("name")}
+
+        missing = contract_names - invoice_names
+        missing = {m for m in missing if m}  # 过滤空值
+        if missing:
+            issues.append({
+                "type": "item_missing",
+                "severity": "medium",
+                "title": "商品未在发票中找到",
+                "description": f"合同商品未在发票中匹配: {', '.join(sorted(missing))}",
+                "recommendation": "请确认是否所有商品都已开票",
+            })
+
+        extra = invoice_names - contract_names
+        extra = {e for e in extra if e}  # 过滤空值
+        if extra:
+            issues.append({
+                "type": "item_extra",
+                "severity": "low",
+                "title": "发票包含合同外商品",
+                "description": f"发票商品不在合同中: {', '.join(sorted(extra))}",
+                "recommendation": "请确认是否为关联采购或开票错误",
+            })
+
+        return issues
+
+    def _calculate_coverage(
+        self, contract: Dict, invoices: List[Dict]
+    ) -> float:
+        """计算发票覆盖率"""
+        contract_amount = contract.get("total_amount") or 0
+        if not contract_amount:
+            return 100.0
+
+        total_invoice = sum(inv.get("total_amount", 0) or 0 for inv in invoices)
+        if total_invoice <= 0:
+            return 0.0
+
+        return min(total_invoice / contract_amount * 100, 100.0)
+
+    def _determine_status(self, issues: List[Dict]) -> str:
+        has_high = any(i.get("severity") == "high" for i in issues)
+        has_medium = any(i.get("severity") == "medium" for i in issues)
+        if has_high:
+            return "不合规"
+        if has_medium:
+            return "部分合规"
+        return "合规"
+
+    def _calculate_score(self, issues: List[Dict], coverage: float) -> float:
+        """计算综合评分"""
+        score = 1.0
+        for issue in issues:
+            sev = issue.get("severity", "low")
+            if sev == "high":
+                score -= 0.15
+            elif sev == "medium":
+                score -= 0.05
+            else:
+                score -= 0.01
+        score *= min(coverage / 100.0, 1.0)
+        return max(score, 0.0)

@@ -1,119 +1,183 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { getAuditTasks, startAudit as startAuditApi } from '@/services/audit'
-import { apiGet } from '@/services/api'
-import type {
-  AuditTask,
-  AuditReport,
-  WebSocketMessage,
-  ProgressMessage,
-  Statistics
-} from '@/types'
+
+export interface FileInfo {
+  id: string
+  name: string
+  size: number
+  type: string
+  category: 'contract' | 'invoice' | 'other'
+  path?: string
+  url?: string
+}
+
+export interface AuditTask {
+  id: string
+  name: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: number
+  files: FileInfo[]
+  createdAt: Date
+  completedAt?: Date
+  errorMessage?: string
+}
+
+export interface AuditResult {
+  id: string
+  taskId: string
+  status: 'pass' | 'fail' | 'warning'
+  summary: {
+    contractAmount: number
+    invoiceTotal: number
+    coverage: number
+    issueCount: number
+    processingTime: number
+  }
+  contractInfo?: {
+    contractNumber: string
+    buyerName: string
+    sellerName: string
+    totalAmount: number
+    taxRate: number
+    items: Array<{
+      name: string
+      quantity: number
+      unitPrice: number
+    }>
+  }
+  invoices?: Array<{
+    id: string
+    invoiceNumber: string
+    amount: number
+    taxAmount: number
+    status: 'normal' | 'duplicate' | 'error'
+    confidence: number
+  }>
+  issues?: Array<{
+    id: string
+    type: 'error' | 'warning' | 'info'
+    severity: 'high' | 'medium' | 'low'
+    title: string
+    description: string
+    recommendation: string
+  }>
+  comparisons?: Array<{
+    productName: string
+    contractQuantity: number
+    invoiceQuantity: number
+    difference: number
+    status: 'match' | 'mismatch' | 'partial'
+  }>
+}
 
 export const useAuditStore = defineStore('audit', () => {
   // 状态
   const currentTask = ref<AuditTask | null>(null)
-  const auditReport = ref<AuditReport | null>(null)
-  const auditProgress = ref(0)
-  const currentStep = ref('')
+  const auditHistory = ref<AuditTask[]>([])
+  const currentResult = ref<AuditResult | null>(null)
   const wsConnection = ref<WebSocket | null>(null)
-  const isConnected = ref(false)
-  const errorMessage = ref('')
 
   // 计算属性
-  const isProcessing = computed(() =>
-    currentTask.value?.status === 'processing'
-  )
+  const hasActiveTask = computed(() => currentTask.value !== null)
+  const isProcessing = computed(() => currentTask.value?.status === 'processing')
+  const progressPercentage = computed(() => currentTask.value?.progress || 0)
 
-  const isCompleted = computed(() =>
-    currentTask.value?.status === 'completed'
-  )
+  // 方法
+  const createTask = (name: string, files: FileInfo[]): AuditTask => {
+    const task: AuditTask = {
+      id: generateId(),
+      name,
+      status: 'pending',
+      progress: 0,
+      files,
+      createdAt: new Date()
+    }
 
-  const hasError = computed(() =>
-    currentTask.value?.status === 'failed' || !!errorMessage.value
-  )
+    currentTask.value = task
+    auditHistory.value.unshift(task)
+    return task
+  }
 
-  const progressPercentage = computed(() =>
-    currentTask.value?.progress_percentage || 0
-  )
-
-  const statistics = computed<Statistics>(() => {
-    if (!auditReport.value) {
-      return {
-        contracts_analyzed: 0,
-        invoices_analyzed: 0,
-        issues_found: 0,
-        total_files: 0
+  const updateTaskStatus = (
+    taskId: string,
+    status: AuditTask['status'],
+    progress?: number,
+    errorMessage?: string
+  ) => {
+    if (currentTask.value?.id === taskId) {
+      currentTask.value.status = status
+      if (progress !== undefined) {
+        currentTask.value.progress = progress
+      }
+      if (errorMessage) {
+        currentTask.value.errorMessage = errorMessage
+      }
+      if (status === 'completed') {
+        currentTask.value.completedAt = new Date()
       }
     }
 
-    return {
-      contracts_analyzed: auditReport.value.contracts.length,
-      invoices_analyzed: auditReport.value.invoices.length,
-      issues_found: auditReport.value.issues_summary.total_issues,
-      total_files: auditReport.value.contracts.length + auditReport.value.invoices.length
-    }
-  })
-
-  // 方法
-  const setCurrentTask = (task: AuditTask | null) => {
-    currentTask.value = task
-  }
-
-  const setAuditReport = (report: AuditReport | null) => {
-    auditReport.value = report
-  }
-
-  const updateProgress = (progress: number, step: string) => {
-    auditProgress.value = progress
-    currentStep.value = step
-
-    if (currentTask.value) {
-      currentTask.value.progress_percentage = progress
-      currentTask.value.current_step = step
+    // 更新历史记录
+    const historyTask = auditHistory.value.find(t => t.id === taskId)
+    if (historyTask) {
+      historyTask.status = status
+      if (progress !== undefined) {
+        historyTask.progress = progress
+      }
+      if (errorMessage) {
+        historyTask.errorMessage = errorMessage
+      }
+      if (status === 'completed') {
+        historyTask.completedAt = new Date()
+      }
     }
   }
 
-  const setErrorMessage = (message: string) => {
-    errorMessage.value = message
+  const setCurrentResult = (result: AuditResult) => {
+    currentResult.value = result
   }
 
-  const clearError = () => {
-    errorMessage.value = ''
+  const clearCurrentTask = () => {
+    currentTask.value = null
   }
 
-  const connectWebSocket = (auditId: string) => {
+  const clearCurrentResult = () => {
+    currentResult.value = null
+  }
+
+  const connectWebSocket = (taskId: string) => {
     if (wsConnection.value) {
       wsConnection.value.close()
     }
 
-    const wsUrl = `ws://localhost:8000/ws/audit/${auditId}`
+    const wsUrl = `ws://127.0.0.1:8000/ws/audit/${taskId}`
     wsConnection.value = new WebSocket(wsUrl)
 
     wsConnection.value.onopen = () => {
-      console.log('WebSocket连接已建立')
-      isConnected.value = true
-      clearError()
+      console.log('WebSocket connected')
     }
 
     wsConnection.value.onmessage = (event) => {
       try {
-        const message: WebSocketMessage = JSON.parse(event.data)
-        handleWebSocketMessage(message)
+        const data = JSON.parse(event.data)
+        if (data.type === 'progress') {
+          updateTaskStatus(taskId, 'processing', data.progress)
+        } else if (data.type === 'completed') {
+          updateTaskStatus(taskId, 'completed', 100)
+        } else if (data.type === 'error') {
+          updateTaskStatus(taskId, 'failed', undefined, data.message)
+        }
       } catch (error) {
-        console.error('解析WebSocket消息失败:', error)
+        console.error('WebSocket message error:', error)
       }
     }
 
-    wsConnection.value.onerror = (error) => {
-      console.error('WebSocket连接错误:', error)
-      isConnected.value = false
-      setErrorMessage('WebSocket连接失败')
+    wsConnection.value.onclose = () => {
+      console.log('WebSocket disconnected')
     }
 
-    wsConnection.value.onclose = () => {
-      console.log('WebSocket连接已关闭')
-      isConnected.value = false
+    wsConnection.value.onerror = (error) => {
+      console.error('WebSocket error:', error)
     }
   }
 
@@ -122,180 +186,30 @@ export const useAuditStore = defineStore('audit', () => {
       wsConnection.value.close()
       wsConnection.value = null
     }
-    isConnected.value = false
   }
 
-  const handleWebSocketMessage = (message: WebSocketMessage) => {
-    console.log('收到WebSocket消息:', message)
-
-    switch (message.type) {
-      case 'connection_established':
-        console.log('WebSocket连接确认:', message.data.message)
-        break
-
-      case 'progress':
-        handleProgressMessage(message.data as ProgressMessage)
-        break
-
-      case 'error':
-        setErrorMessage(message.data.error_message)
-        break
-
-      case 'agent_update':
-        console.log('Agent状态更新:', message.data)
-        break
-
-      case 'file_processed':
-        console.log('文件处理完成:', message.data)
-        break
-
-      case 'audit_completed':
-        handleAuditCompleted(message.data)
-        break
-
-      case 'duplicate_invoices_detected':
-        console.log('检测到重复发票:', message.data)
-        break
-
-      default:
-        console.log('未知消息类型:', message.type)
-    }
-  }
-
-  const handleProgressMessage = (data: ProgressMessage) => {
-    updateProgress(data.progress, data.step)
-    console.log(`审计进度: ${data.progress}% - ${data.message}`)
-  }
-
-  const handleAuditCompleted = (data: any) => {
-    if (data.report) {
-      setAuditReport(data.report)
-    }
-
-    if (currentTask.value) {
-      currentTask.value.status = 'completed'
-      currentTask.value.progress_percentage = 100
-      currentTask.value.current_step = '审计完成'
-    }
-
-    console.log('审计完成:', data)
-  }
-
-  const getRecentTasks = async (limit: number = 5): Promise<AuditTask[]> => {
-    try {
-      const response = await getAuditTasks(undefined, limit, 0)
-      return response.data.tasks || []
-    } catch (error) {
-      console.error('获取最近任务失败:', error)
-      return []
-    }
-  }
-
-  const getTask = async (taskId: string): Promise<AuditTask | null> => {
-    try {
-      const response = await getAuditTasks(undefined, 1, 0)
-      const tasks = response.data.tasks || []
-      return tasks.find(task => task.id === taskId) || null
-    } catch (error) {
-      console.error('获取任务失败:', error)
-      return null
-    }
-  }
-
-  const getTasks = async (status?: string, limit: number = 20, offset: number = 0) => {
-    try {
-      const response = await getAuditTasks(status, limit, offset)
-      return response.data
-    } catch (error) {
-      console.error('获取任务列表失败:', error)
-      return { tasks: [], total: 0, page: 1, size: limit, pages: 0 }
-    }
-  }
-
-  const getStatistics = async () => {
-    try {
-      // 使用fetch API
-      const response = await fetch('/api/v1/results/statistics')
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('获取统计数据失败:', error)
-      return {
-        total_tasks: 0,
-        completed_tasks: 0,
-        failed_tasks: 0,
-        processing_tasks: 0,
-        total_contracts: 0,
-        total_invoices: 0,
-        success_rate: 0.0
-      }
-    }
-  }
-
-  const startAudit = async (taskId: string, config?: any) => {
-    try {
-      const response = await startAuditApi(taskId, config)
-      if (response.code === 200) {
-        // 更新当前任务状态
-        if (currentTask.value) {
-          currentTask.value.status = 'processing'
-          currentTask.value.current_step = '开始审计'
-          // 存储audit ID
-          if (response.data?.audit_id) {
-            currentTask.value.audit_id = response.data.audit_id
-          }
-        }
-        return response.data?.audit_id || true
-      } else {
-        setErrorMessage(response.message || '启动审计失败')
-        return false
-      }
-    } catch (error: any) {
-      console.error('启动审计失败:', error)
-      setErrorMessage(error.message || '启动审计失败')
-      return false
-    }
-  }
-
-  const reset = () => {
-    currentTask.value = null
-    auditReport.value = null
-    auditProgress.value = 0
-    currentStep.value = ''
-    errorMessage.value = ''
-    disconnectWebSocket()
+  // 辅助函数
+  const generateId = (): string => {
+    return Date.now().toString(36) + Math.random().toString(36).substr(2)
   }
 
   return {
     // 状态
     currentTask,
-    auditReport,
-    auditProgress,
-    currentStep,
+    auditHistory,
+    currentResult,
     wsConnection,
-    isConnected,
-    errorMessage,
-
     // 计算属性
+    hasActiveTask,
     isProcessing,
-    isCompleted,
-    hasError,
     progressPercentage,
-    statistics,
-
     // 方法
-    setCurrentTask,
-    setAuditReport,
-    updateProgress,
-    setErrorMessage,
-    clearError,
+    createTask,
+    updateTaskStatus,
+    setCurrentResult,
+    clearCurrentTask,
+    clearCurrentResult,
     connectWebSocket,
-    disconnectWebSocket,
-    getRecentTasks,
-    getTask,
-    getTasks,
-    getStatistics,
-    startAudit,
-    reset
+    disconnectWebSocket
   }
 })

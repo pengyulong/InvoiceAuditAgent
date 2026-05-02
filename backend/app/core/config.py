@@ -1,73 +1,79 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings
 from typing import List, Optional
 import os
 
+
 class Settings(BaseSettings):
-    # 应用基础配置
-    PROJECT_NAME: str = "智能合同发票审计系统"
-    VERSION: str = "1.0.0"
-    API_V1_STR: str = "/api/v1"
-    SECRET_KEY: str = "your-secret-key-change-in-production"
-    DEBUG: bool = True
+    # 基础配置
+    app_name: str = "智能合同发票审计系统"
+    environment: str = "development"
+    debug: bool = True
 
     # 服务器配置
-    HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    host: str = "0.0.0.0"
+    port: int = 8000
 
     # 数据库配置
-    DATABASE_URL: str = "sqlite:///./audit.db"
+    database_url: str = "sqlite:///./audit.db"
 
     # Redis配置
-    REDIS_URL: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://localhost:6379/0"
 
-    # CORS配置
-    ALLOWED_HOSTS: List[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080"
-    ]
-
-    # AI模型API配置
-    QWEN_API_BASE: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    QWEN_API_KEY: Optional[str] = None
-    QWEN_MODEL: str = "qwen3-vl-plus"
-
-    DEEPSEEK_API_BASE: str = "https://api.deepseek.com/v1"
-    DEEPSEEK_API_KEY: Optional[str] = None
-    DEEPSEEK_MODEL: str = "deepseek-chat"
+    # JWT配置
+    secret_key: str = "your-secret-key-here"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 24 * 60
+    auth_username: str = "admin"
+    auth_password: str = "your-password-here"
 
     # 文件上传配置
-    MAX_FILE_SIZE: int = 52428800  # 50MB
-    UPLOAD_DIR: str = "./uploads"
-    ALLOWED_EXTENSIONS: List[str] = [".zip", ".pdf", ".jpg", ".jpeg", ".png"]
+    upload_dir: str = "uploads"
+    max_file_size: int = 50 * 1024 * 1024  # 50MB
+    allowed_file_types: List[str] = [
+        "application/pdf",
+        "application/zip",
+        "image/jpeg",
+        "image/png"
+    ]
+    allowed_extensions: List[str] = [".zip", ".pdf", ".jpg", ".jpeg", ".png"]
 
-    # Celery配置
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    # AI模型配置 - 百度云OCR (传统AK/SK)
+    baidu_ocr_api_key: Optional[str] = None
+    baidu_ocr_secret_key: Optional[str] = None
+    baidu_ocr_api_base: str = "https://aip.baidubce.com/rest/2.0/ocr/v1"
+
+    # AI模型配置 - DeepSeek
+    deepseek_api_key: Optional[str] = None
+    deepseek_api_base: str = "https://api.deepseek.com/v1"
+    deepseek_model: str = "deepseek-chat"
+
+    # CORS配置
+    allowed_hosts: List[str] = ["*"]
 
     # 日志配置
-    LOG_LEVEL: str = "INFO"
-    LOG_FILE: str = "../logs/backend.log"
+    log_level: str = "INFO"
+    log_file: str = "logs/app.log"
+
+    # Celery配置
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/0"
 
     # WebSocket配置
-    WS_HEARTBEAT_INTERVAL: int = 30
+    ws_heartbeat_interval: int = 30
 
     # 审计配置
-    MAX_CONCURRENT_AUDITS: int = 5
-    AUDIT_TIMEOUT: int = 300  # 5分钟
+    max_concurrent_audits: int = 5
+    audit_timeout: int = 300
+    max_contract_ocr_pages: int = 20
 
-    model_config = SettingsConfigDict(
-        env_file="../.env",  # 从backend目录查找项目根目录的.env
-        case_sensitive=True,
-        extra="allow"
-    )
+    class Config:
+        env_file = "../.env"  # 从项目根目录加载.env文件
+        case_sensitive = False
+
 
 # 创建全局设置实例
 settings = Settings()
 
 # 确保必要的目录存在
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-os.makedirs(os.path.dirname(settings.LOG_FILE), exist_ok=True)
+os.makedirs(settings.upload_dir, exist_ok=True)
+os.makedirs(os.path.dirname(settings.log_file), exist_ok=True)

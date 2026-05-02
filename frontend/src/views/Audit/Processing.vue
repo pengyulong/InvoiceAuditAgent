@@ -1,1020 +1,1416 @@
 <template>
-  <div class="processing-container">
-    <div class="processing-header">
-      <el-button type="text" @click="goBack" class="back-button">
-        <el-icon><ArrowLeft /></el-icon>
-        返回
-      </el-button>
-      <h2>审计处理中</h2>
+  <div class="processing-page">
+    <!-- 页面标题 -->
+    <div class="page-header">
+      <el-breadcrumb separator="/">
+        <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
+        <el-breadcrumb-item :to="{ path: '/audit/upload' }">审计管理</el-breadcrumb-item>
+        <el-breadcrumb-item>审计进度</el-breadcrumb-item>
+      </el-breadcrumb>
+
+      <div class="header-content">
+        <h1 class="page-title">审计进度</h1>
+        <p class="page-description">实时监控AI Agent工作流程</p>
+      </div>
     </div>
 
-    <div class="processing-content">
-      <!-- 任务状态卡片 -->
-      <el-card class="status-card">
+    <!-- 主要内容区域 -->
+    <div class="main-content">
+      <!-- 状态卡片 -->
+      <el-card class="status-card" shadow="hover">
+        <div class="status-content">
+          <div class="status-info">
+            <div class="status-item">
+              <span class="status-label">任务ID:</span>
+              <span class="status-value">{{ taskId || 'N/A' }}</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">状态:</span>
+              <el-tag :type="getStatusType(auditStatus)" size="large">
+                {{ getStatusLabel(auditStatus) }}
+              </el-tag>
+            </div>
+            <div class="status-item" v-if="estimatedTime">
+              <span class="status-label">预计剩余:</span>
+              <span class="status-value">{{ formatTime(estimatedTime) }}</span>
+            </div>
+          </div>
+
+          <!-- 整体进度条 -->
+          <div class="progress-section">
+            <div class="progress-header">
+              <span class="progress-label">整体进度</span>
+              <span class="progress-value">{{ progressPercentage }}%</span>
+            </div>
+            <el-progress
+              :percentage="progressPercentage"
+              :stroke-width="12"
+              :status="getProgressStatus()"
+              class="main-progress"
+            />
+          </div>
+        </div>
+      </el-card>
+
+      <!-- Agent工作流可视化 -->
+      <el-card class="workflow-card" shadow="hover">
         <template #header>
           <div class="card-header">
-            <el-icon><DataAnalysis /></el-icon>
-            <span>任务状态</span>
+            <span class="header-icon">⚙️</span>
+            <span class="header-title">Agent工作流程</span>
           </div>
         </template>
 
-        <div v-if="loading" class="loading-container">
-          <el-skeleton :rows="4" animated />
-        </div>
-
-        <div v-else-if="task" class="task-status">
-          <div class="task-info">
-            <h3>{{ task.task_name }}</h3>
-            <div class="task-meta">
-              <el-tag :type="getStatusType(task.status)" size="large">
-                {{ getStatusText(task.status) }}
-              </el-tag>
-              <span class="task-id">任务ID: {{ task.id }}</span>
-            </div>
-          </div>
-
-          <div class="progress-section">
-            <div class="progress-header">
-              <span>处理进度</span>
-              <span class="progress-percentage">{{ Math.round(task.progress_percentage || 0) }}%</span>
-            </div>
-            <el-progress
-              :percentage="Math.round(task.progress_percentage || 0)"
-              :status="getProgressStatus(task.status)"
-              :stroke-width="10"
-              :striped="task.status === 'processing'"
-              :animated="task.status === 'processing'"
-            >
-              <template #default="{ percentage }">
-                <span class="progress-text">{{ Math.round(percentage) }}%</span>
-              </template>
-            </el-progress>
-            <div class="current-step">
-              <el-icon :class="getStepIcon(task.status)">
-                <component :is="getStepIcon(task.status)" />
-              </el-icon>
-              <span>{{ task.current_step || '准备中...' }}</span>
-              <div v-if="task.status === 'processing'" class="processing-indicator">
-                <span class="processing-dot"></span>
-                <span class="processing-dot"></span>
-                <span class="processing-dot"></span>
+        <div class="workflow-content">
+          <!-- 工作流步骤图 -->
+          <div class="workflow-steps">
+            <div class="steps-container">
+              <div
+                v-for="(step, index) in workflowSteps"
+                :key="step.id"
+                class="step-item"
+                :class="getStepClass(step.status)"
+              >
+                <div class="step-icon">
+                  <span v-if="step.status === 'completed'">✅</span>
+                  <span v-else-if="step.status === 'running'" class="rotating">⏳</span>
+                  <span v-else-if="step.status === 'error'">❌</span>
+                  <span v-else>🕐</span>
+                </div>
+                <div class="step-content">
+                  <h4 class="step-title">{{ step.title }}</h4>
+                  <p class="step-description">{{ step.description }}</p>
+                  <div v-if="step.status === 'running'" class="step-progress">
+                    <el-progress
+                      :percentage="step.progress || 0"
+                      :stroke-width="4"
+                      status="success"
+                    />
+                  </div>
+                </div>
+                <div v-if="index < workflowSteps.length - 1" class="step-connector" :class="getConnectorClass(step.status)"></div>
               </div>
             </div>
           </div>
-
-          <div class="task-stats">
-            <div class="stat-item">
-              <span class="stat-label">文件总数</span>
-              <span class="stat-value">{{ task.total_files }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">已处理</span>
-              <span class="stat-value">{{ task.processed_files }}</span>
-            </div>
-            <div class="stat-item">
-              <span class="stat-label">开始时间</span>
-              <span class="stat-value">{{ formatTime(task.created_at) }}</span>
-            </div>
-            <div v-if="task.completed_at" class="stat-item">
-              <span class="stat-label">完成时间</span>
-              <span class="stat-value">{{ formatTime(task.completed_at) }}</span>
-            </div>
-          </div>
         </div>
+      </el-card>
 
-        <div v-else class="error-state">
-          <el-result
-            icon="error"
-            title="任务不存在"
-            sub-title="请检查任务ID是否正确"
-          >
-            <template #extra>
-              <el-button type="primary" @click="goBack">返回</el-button>
+      <el-row :gutter="24">
+        <!-- 左侧：Agent详细状态 -->
+        <el-col :lg="12" :md="24" :sm="24">
+          <el-card class="agents-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span class="header-icon">👥</span>
+                <span class="header-title">Agent状态详情</span>
+              </div>
             </template>
-          </el-result>
-        </div>
-      </el-card>
 
-      <!-- 实时日志 -->
-      <el-card class="logs-card">
-        <template #header>
-          <div class="card-header">
-            <el-icon><Document /></el-icon>
-            <span>处理日志</span>
-            <el-button type="text" @click="toggleAutoScroll">
-              <el-icon><Sort /></el-icon>
-              {{ autoScroll ? '停止滚动' : '自动滚动' }}
-            </el-button>
-          </div>
-        </template>
+            <div class="agents-content">
+              <div
+                v-for="agent in agentStatus"
+                :key="agent.name"
+                class="agent-item"
+                :class="getAgentClass(agent.status)"
+              >
+                <div class="agent-header">
+                  <div class="agent-info">
+                    <el-icon class="agent-icon">
+                      <component :is="getAgentIcon(agent.name)" />
+                    </el-icon>
+                    <div>
+                      <h4 class="agent-name">{{ getAgentDisplayName(agent.name) }}</h4>
+                      <el-tag :type="getAgentStatusType(agent.status)" size="small">
+                        {{ getAgentStatusText(agent.status) }}
+                      </el-tag>
+                    </div>
+                  </div>
+                  <div class="agent-time" v-if="agent.start_time">
+                    <span class="time-label">用时:</span>
+                    <span class="time-value">{{ calculateDuration(agent.start_time, agent.end_time) }}</span>
+                  </div>
+                </div>
 
-        <div ref="logContainer" class="log-container" :class="{ 'auto-scroll': autoScroll }">
-          <div v-if="logs.length === 0" class="empty-logs">
-            <el-empty description="暂无日志" />
-          </div>
-          <div v-else class="log-list">
-            <div
-              v-for="(log, index) in logs"
-              :key="index"
-              class="log-item"
-              :class="getLogLevelClass(log.level)"
-            >
-              <span class="log-time">{{ formatLogTime(log.timestamp) }}</span>
-              <span class="log-level">{{ log.level.toUpperCase() }}</span>
-              <span class="log-message">{{ log.message }}</span>
+                <div class="agent-details" v-if="agent.status === 'running' && agent.data">
+                  <div class="detail-item">
+                    <span class="detail-label">当前操作:</span>
+                    <span class="detail-value">{{ agent.data.message || '处理中...' }}</span>
+                  </div>
+                  <div class="detail-item" v-if="agent.data.progress !== undefined">
+                    <span class="detail-label">进度:</span>
+                    <el-progress
+                      :percentage="agent.data.progress"
+                      :stroke-width="6"
+                      :show-text="false"
+                      class="mini-progress"
+                    />
+                    <span class="progress-text">{{ agent.data.progress }}%</span>
+                  </div>
+                </div>
+
+                <div class="agent-details" v-if="agent.status === 'completed' && agent.data">
+                  <div class="success-summary">
+                    <div class="summary-item" v-for="(value, key) in agent.data" :key="key">
+                      <span class="summary-label">{{ formatSummaryLabel(key) }}:</span>
+                      <span class="summary-value">{{ formatSummaryValue(value) }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="agent-details" v-if="agent.status === 'error'">
+                  <div class="error-info">
+                    <el-icon class="error-icon"><Warning /></el-icon>
+                    <span class="error-message">{{ agent.error_message || '执行失败' }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </el-card>
+          </el-card>
+        </el-col>
+
+        <!-- 右侧：实时日志 -->
+        <el-col :lg="12" :md="24" :sm="24">
+          <el-card class="logs-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <el-icon class="header-icon"><Document /></el-icon>
+                <span class="header-title">实时日志</span>
+                <div class="header-actions">
+                  <el-button
+                    size="small"
+                    :icon="Refresh"
+                    @click="clearLogs"
+                  >
+                    清空
+                  </el-button>
+                  <el-button
+                    size="small"
+                    :icon="Download"
+                    @click="downloadLogs"
+                  >
+                    导出
+                  </el-button>
+                </div>
+              </div>
+            </template>
+
+            <div class="logs-content" ref="logsContainer">
+              <div class="log-entries">
+                <div
+                  v-for="(log, index) in logs"
+                  :key="index"
+                  class="log-entry"
+                  :class="getLogClass(log.level)"
+                >
+                  <span class="log-time">{{ formatLogTime(log.timestamp) }}</span>
+                  <el-icon class="log-icon">
+                    <component :is="getLogIcon(log.level)" />
+                  </el-icon>
+                  <span class="log-message">{{ log.message }}</span>
+                </div>
+
+                <!-- 自动滚动到底部 -->
+                <div ref="logBottom" class="log-bottom"></div>
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
 
       <!-- 操作按钮 -->
-      <div class="action-buttons">
-        <div class="primary-actions">
-          <el-button
-            v-if="task?.status === 'pending'"
-            type="primary"
-            size="large"
-            @click="startTask"
-          >
-            <el-icon><VideoPlay /></el-icon>
-            开始审计
-          </el-button>
-          <el-button
-            v-if="task?.status === 'completed'"
-            type="success"
-            size="large"
-            @click="viewResults"
-          >
-            <el-icon><View /></el-icon>
-            查看结果
-          </el-button>
-        </div>
+      <div class="action-section">
+        <el-card class="action-card" shadow="hover">
+          <div class="action-content">
+            <div class="action-buttons">
+              <el-button
+                v-if="auditStatus === 'processing'"
+                type="warning"
+                :icon="VideoPause"
+                @click="pauseAudit"
+                :loading="isPausing"
+              >
+                暂停审计
+              </el-button>
 
-        <div class="secondary-actions">
-          <el-button
-            v-if="task?.status === 'failed'"
-            type="danger"
-            @click="retryTask"
-          >
-            <el-icon><RefreshRight /></el-icon>
-            重试
-          </el-button>
-          <el-button @click="goBack">
-            <el-icon><ArrowLeft /></el-icon>
-            返回
-          </el-button>
-        </div>
+              <el-button
+                v-if="auditStatus === 'paused'"
+                type="primary"
+                :icon="VideoPlay"
+                @click="resumeAudit"
+                :loading="isResuming"
+              >
+                恢复审计
+              </el-button>
+
+              <el-button
+                v-if="auditStatus !== 'completed'"
+                type="danger"
+                :icon="Close"
+                @click="cancelAudit"
+                :loading="isCancelling"
+              >
+                取消审计
+              </el-button>
+
+              <el-button
+                v-if="auditStatus === 'completed'"
+                type="primary"
+                :icon="View"
+                @click="viewResults"
+              >
+                查看结果
+              </el-button>
+
+              <el-button
+                :icon="RefreshLeft"
+                @click="goBack"
+              >
+                返回上传
+              </el-button>
+            </div>
+
+            <!-- 统计信息 -->
+            <div class="stats-section">
+              <div class="stat-item">
+                <span class="stat-label">处理文件:</span>
+                <span class="stat-value">{{ processedFiles }}/{{ totalFiles }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">处理时间:</span>
+                <span class="stat-value">{{ formatDuration(processingTime) }}</span>
+              </div>
+              <div class="stat-item" v-if="confidenceScore">
+                <span class="stat-label">置信度:</span>
+                <span class="stat-value">{{ (confidenceScore * 100).toFixed(1) }}%</span>
+              </div>
+            </div>
+          </div>
+        </el-card>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  Document,
+  Close,
+  Warning,
+  Refresh,
+  Download,
+  VideoPause,
+  VideoPlay,
+  View,
+  RefreshLeft,
+  InfoFilled,
+  SuccessFilled
+} from '@element-plus/icons-vue'
 import { useAuditStore } from '@/stores/audit'
-import type { AuditTask } from '@/types/audit'
+import { apiService, authStorage } from '@/services/api'
 
-const route = useRoute()
+interface StepChangeData {
+  previous_step_id?: string | null
+  next_step_id?: string | null
+  step_name?: string
+  message?: string
+}
+
 const router = useRouter()
+const route = useRoute()
 const auditStore = useAuditStore()
 
-const taskId = route.params.taskId as string
-const loading = ref(true)
-const task = ref<AuditTask | null>(null)
-const auditId = ref<string>('')
-const logs = ref<Array<{ timestamp: string; level: string; message: string }>>([])
-const autoScroll = ref(true)
-const logContainer = ref<HTMLElement>()
-let websocket: WebSocket | null = null
-let refreshTimer: NodeJS.Timeout | null = null
+// 响应式数据
+const taskId = ref(route.params.taskId as string)
+const auditStatus = ref<'pending' | 'processing' | 'completed' | 'failed' | 'paused' | 'cancelled'>('pending')
+const progressPercentage = ref(0)
+const currentStep = ref('')
+const estimatedTime = ref(0)
+const agentStatus = ref<any[]>([])
+const logs = ref<any[]>([])
+const logsContainer = ref()
+const logBottom = ref()
+
+// 操作状态
+const isPausing = ref(false)
+const isResuming = ref(false)
+const isCancelling = ref(false)
+
+// 统计数据
+const totalFiles = ref(0)
+const processedFiles = ref(0)
+const processingTime = ref(0)
+const confidenceScore = ref(0)
 
 // WebSocket连接
-const connectWebSocket = () => {
-  try {
-    // 修复：始终使用task_id连接WebSocket，因为后端使用task_id作为连接键
-    const wsUrl = `ws://localhost:8000/ws/audit/${taskId}`
-    websocket = new WebSocket(wsUrl)
+let wsConnection: WebSocket | null = null
+let statusPollTimer: ReturnType<typeof setInterval> | null = null
 
-    websocket.onopen = () => {
-      console.log('WebSocket连接成功')
-      addLog({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: 'WebSocket连接已建立，正在监听审计进度...'
-      })
-    }
-
-    websocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        console.log('收到WebSocket消息:', data)
-
-        if (data.type === 'connection_established') {
-          addLog({
-            timestamp: new Date().toISOString(),
-            level: 'info',
-            message: '已建立实时连接，准备接收审计进度更新'
-          })
-        } else if (data.type === 'progress') {
-          // 更新任务状态
-          updateTaskStatus(data.data)
-          // 添加进度日志
-          addLog({
-            timestamp: new Date().toISOString(),
-            level: 'info',
-            message: `[${data.data.step}] ${data.data.message} (${data.data.progress}%)`
-          })
-        } else if (data.type === 'agent_update') {
-          // Agent状态更新
-          addLog({
-            timestamp: new Date().toISOString(),
-            level: 'info',
-            message: `[${data.data.agent_name}] ${data.data.status}`
-          })
-        } else if (data.type === 'file_processed') {
-          // 文件处理完成
-          addLog({
-            timestamp: new Date().toISOString(),
-            level: 'success',
-            message: `文件处理完成: ${data.data.file_info.file_name}`
-          })
-        } else if (data.type === 'audit_completed') {
-          // 任务完成
-          addLog({
-            timestamp: new Date().toISOString(),
-            level: 'success',
-            message: '🎉 审计任务已完成！'
-          })
-          if (task.value) {
-            task.value.status = 'completed'
-            task.value.progress_percentage = 100
-            task.value.current_step = '审计完成'
-          }
-          if (refreshTimer) {
-            clearInterval(refreshTimer)
-          }
-        } else if (data.type === 'error') {
-          // 错误信息
-          addLog({
-            timestamp: new Date().toISOString(),
-            level: 'error',
-            message: `❌ 错误: ${data.data.error_message}`
-          })
-        } else if (data.type === 'ping') {
-          // 心跳消息，忽略
-          return
-        }
-      } catch (parseError) {
-        console.error('解析WebSocket消息失败:', parseError)
-        addLog({
-          timestamp: new Date().toISOString(),
-          level: 'error',
-          message: `消息解析错误: ${parseError.message}`
-        })
-      }
-    }
-
-    websocket.onerror = (error) => {
-      console.error('WebSocket错误:', error)
-    }
-
-    websocket.onclose = () => {
-      console.log('WebSocket连接关闭')
-      // 尝试重连
-      setTimeout(() => {
-        if (route.name === 'AuditProcessing') {
-          connectWebSocket()
-        }
-      }, 5000)
-    }
-  } catch (error) {
-    console.error('WebSocket连接失败:', error)
+// 工作流步骤定义
+const workflowSteps = ref([
+  {
+    id: 'file_parsing',
+    title: '文件解析',
+    description: '解析上传的合同和发票文件',
+    status: 'idle',
+    progress: 0
+  },
+  {
+    id: 'contract_analysis',
+    title: '合同分析',
+    description: 'AI分析合同内容，提取关键信息',
+    status: 'idle',
+    progress: 0
+  },
+  {
+    id: 'invoice_analysis',
+    title: '发票分析',
+    description: '批量处理发票，检测重复项',
+    status: 'idle',
+    progress: 0
+  },
+  {
+    id: 'cross_validation',
+    title: '交叉验证',
+    description: '匹配合同与发票信息，验证一致性',
+    status: 'idle',
+    progress: 0
+  },
+  {
+    id: 'report_generation',
+    title: '报告生成',
+    description: '生成详细的审计报告',
+    status: 'idle',
+    progress: 0
   }
-}
+])
 
-// 更新任务状态
-const updateTaskStatus = (payload: any) => {
-  if (task.value) {
-    // 添加进度变化的详细日志
-    const oldProgress = task.value.progress_percentage || 0
-    const newProgress = payload.progress || 0
-    const step = payload.step || payload.current_step || '处理中'
-    const message = payload.message || '正在处理...'
-
-    // 如果进度有显著变化，添加详细日志
-    if (newProgress > oldProgress) {
-      console.log(`进度更新: ${oldProgress}% → ${newProgress}%, 步骤: ${step}`)
-    }
-
-    task.value.progress_percentage = newProgress
-    task.value.current_step = step
-    if (payload.processed_files !== undefined) {
-      task.value.processed_files = payload.processed_files
-    }
-
-    // 根据进度推断任务状态
-    if (newProgress > 0 && newProgress < 100) {
-      task.value.status = 'processing'
-    } else if (newProgress >= 100) {
-      task.value.status = 'completed'
-    }
-  }
-}
-
-// 添加日志
-const addLog = (logEntry: any) => {
-  // 确保日志格式正确
-  const formattedLog = {
-    timestamp: logEntry.timestamp || new Date().toISOString(),
-    level: logEntry.level || 'info',
-    message: logEntry.message || ''
-  }
-
-  // 添加日志到列表
-  logs.value.push(formattedLog)
-
-  // 限制日志数量，保留最新的200条
-  if (logs.value.length > 200) {
-    logs.value = logs.value.slice(-200)
-  }
-
-  // 自动滚动到底部
-  if (autoScroll.value) {
-    nextTick(() => {
-      scrollToBottom()
-    })
-  }
-
-  // 控制台输出重要日志
-  if (formattedLog.level === 'error') {
-    console.error(`[${formattedLog.level.toUpperCase()}] ${formattedLog.message}`)
-  } else if (formattedLog.level === 'warning') {
-    console.warn(`[${formattedLog.level.toUpperCase()}] ${formattedLog.message}`)
-  } else {
-    console.log(`[${formattedLog.level.toUpperCase()}] ${formattedLog.message}`)
-  }
-}
-
-// 滚动到底部
-const scrollToBottom = () => {
-  if (logContainer.value) {
-    logContainer.value.scrollTop = logContainer.value.scrollHeight
-  }
-}
-
-// 切换自动滚动
-const toggleAutoScroll = () => {
-  autoScroll.value = !autoScroll.value
-  if (autoScroll.value) {
-    scrollToBottom()
-  }
-}
-
-// 加载任务数据
-const loadTask = async () => {
-  try {
-    task.value = await auditStore.getTask(taskId)
-    if (!task.value) {
-      loading.value = false
-      return
-    }
-
-    // 如果任务有audit ID，更新本地状态
-    if (task.value.audit_id) {
-      auditId.value = task.value.audit_id
-    }
-
-    // 如果任务已完成或失败，添加一些示例日志
-    if (task.value.status === 'completed' || task.value.status === 'failed') {
-      logs.value = [
-        {
-          timestamp: task.value.created_at,
-          level: 'info',
-          message: '任务开始执行'
-        },
-        {
-          timestamp: task.value.created_at,
-          level: 'info',
-          message: '正在解析ZIP文件...'
-        },
-        {
-          timestamp: task.value.created_at,
-          level: 'info',
-          message: '识别到合同和发票文件'
-        },
-        {
-          timestamp: task.value.created_at,
-          level: 'info',
-          message: '开始AI分析...'
-        }
-      ]
-    }
-  } catch (error) {
-    console.error('加载任务失败:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
-// 页面导航
-const goBack = () => {
-  router.push('/audit')
-}
-
-const viewResults = () => {
-  router.push(`/results/${taskId}`)
-}
-
-const startTask = async () => {
-  try {
-    // 清空现有日志
-    logs.value = []
-
-    // 添加启动前日志
-    addLog({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      message: '🚀 准备启动审计任务...'
-    })
-
-    addLog({
-      timestamp: new Date().toISOString(),
-      level: 'info',
-      message: `任务ID: ${taskId}`
-    })
-
-    // 启动任务
-    const auditResult = await auditStore.startAudit(taskId)
-    if (auditResult) {
-      // 添加成功启动日志
-      addLog({
-        timestamp: new Date().toISOString(),
-        level: 'success',
-        message: '✅ 审计任务启动成功'
-      })
-
-      addLog({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: '📋 正在初始化审计流程...'
-      })
-
-      addLog({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: '🔍 正在建立实时连接...'
-      })
-
-      // 更新audit ID
-      if (typeof auditResult === 'string') {
-        auditId.value = auditResult
-        addLog({
-          timestamp: new Date().toISOString(),
-          level: 'info',
-          message: `审计ID: ${auditResult}`
-        })
-      } else if (task.value?.audit_id) {
-        auditId.value = task.value.audit_id
-        addLog({
-          timestamp: new Date().toISOString(),
-          level: 'info',
-          message: `审计ID: ${task.value.audit_id}`
-        })
-      }
-
-      // 更新任务状态
-      if (task.value) {
-        task.value.status = 'processing'
-        task.value.current_step = '开始审计'
-        task.value.progress_percentage = 1
-      }
-
-      // 连接WebSocket
-      connectWebSocket()
-
-      // 定期刷新任务状态
-      refreshTimer = setInterval(async () => {
-        await loadTask()
-      }, 3000) // 减少到3秒刷新一次，提高实时性
-
-      addLog({
-        timestamp: new Date().toISOString(),
-        level: 'info',
-        message: '⏱️ 已启动状态监控，每3秒刷新一次'
-      })
-    }
-  } catch (error) {
-    console.error('启动任务失败:', error)
-    // 添加详细错误日志
-    addLog({
-      timestamp: new Date().toISOString(),
-      level: 'error',
-      message: `❌ 启动审计失败: ${error.message || error}`
-    })
-
-    addLog({
-      timestamp: new Date().toISOString(),
-      level: 'warning',
-      message: '💡 请检查网络连接或稍后重试'
-    })
-
-    // 更新任务状态为失败
-    if (task.value) {
-      task.value.status = 'failed'
-      task.value.current_step = '启动失败'
-    }
-  }
-}
-
-const retryTask = async () => {
-  try {
-    // 重新开始任务
-    const auditResult = await auditStore.startAudit(taskId)
-    if (auditResult) {
-      // 清空日志
-      logs.value = []
-      // 更新audit ID
-      if (typeof auditResult === 'string') {
-        auditId.value = auditResult
-      } else if (task.value?.audit_id) {
-        auditId.value = task.value.audit_id
-      }
-      // 重新连接WebSocket
-      connectWebSocket()
-    }
-  } catch (error) {
-    console.error('重试任务失败:', error)
-  }
-}
-
-// 工具方法
+// 计算属性
 const getStatusType = (status: string) => {
-  const statusMap = {
+  const typeMap: Record<string, string> = {
     'pending': 'info',
     'processing': 'warning',
     'completed': 'success',
-    'failed': 'danger'
+    'failed': 'danger',
+    'paused': 'warning',
+    'cancelled': 'info'
   }
-  return statusMap[status] || 'info'
+  return typeMap[status] || 'info'
 }
 
-const getStatusText = (status: string) => {
-  const statusMap = {
+const getStatusLabel = (status: string) => {
+  const labelMap: Record<string, string> = {
     'pending': '等待中',
     'processing': '处理中',
     'completed': '已完成',
-    'failed': '失败'
+    'failed': '失败',
+    'paused': '已暂停',
+    'cancelled': '已取消'
   }
-  return statusMap[status] || '未知'
+  return labelMap[status] || status
 }
 
-const getProgressStatus = (status: string) => {
-  if (status === 'completed') return 'success'
-  if (status === 'failed') return 'exception'
+const getProgressStatus = () => {
+  if (auditStatus.value === 'failed') return 'exception'
+  if (auditStatus.value === 'completed') return 'success'
   return ''
 }
 
-const getLogLevelClass = (level: string) => {
-  return `log-${level.toLowerCase()}`
-}
+// WebSocket相关方法
+let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let wsReconnectAttempts = 0
+const MAX_RECONNECT_ATTEMPTS = 5
 
-const formatTime = (time: string) => {
-  return new Date(time).toLocaleString()
-}
+const connectWebSocket = () => {
+  if (!taskId.value) return
 
-const formatLogTime = (time: string) => {
-  const date = new Date(time)
-  return date.toLocaleTimeString()
-}
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1'
+  const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL
+    || (apiBaseUrl.startsWith('http')
+      ? apiBaseUrl.replace(/^http/, 'ws').replace(/\/api\/v1\/?$/, '')
+      : `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`)
+  const token = encodeURIComponent(authStorage.getToken())
+  const wsUrl = `${WS_BASE_URL}/ws/audit/${taskId.value}?token=${token}`
+  wsConnection = new WebSocket(wsUrl)
 
-// 获取步骤图标
-const getStepIcon = (status: string) => {
-  const iconMap = {
-    'pending': 'Clock',
-    'processing': 'Loading',
-    'completed': 'CircleCheck',
-    'failed': 'CircleClose'
+  wsConnection.onopen = () => {
+    console.log('WebSocket连接已建立')
+    wsReconnectAttempts = 0
+    addLog('info', '已连接到审计服务器')
   }
-  return iconMap[status] || 'Clock'
-}
 
-// 监听任务状态变化
-watch(
-  () => task.value?.status,
-  (newStatus) => {
-    if (newStatus === 'completed' || newStatus === 'failed') {
-      if (refreshTimer) {
-        clearInterval(refreshTimer)
-      }
+  wsConnection.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data)
+      handleWebSocketMessage(data)
+    } catch (error) {
+      console.error('WebSocket消息解析失败:', error)
     }
   }
-)
+
+  wsConnection.onclose = (event) => {
+    console.log('WebSocket连接已关闭, code:', event.code)
+    if (auditStatus.value === 'processing' && wsReconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      addLog('warning', '连接断开，正在尝试重连...')
+      wsReconnectAttempts++
+      const delay = Math.min(1000 * Math.pow(2, wsReconnectAttempts), 10000)
+      wsReconnectTimer = setTimeout(() => {
+        addLog('info', `重连尝试 ${wsReconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`)
+        connectWebSocket()
+      }, delay)
+    } else if (wsReconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      addLog('error', '重连次数已达上限，请刷新页面')
+    }
+  }
+
+  wsConnection.onerror = (error) => {
+    console.error('WebSocket错误:', error)
+  }
+}
+
+const handleWebSocketMessage = (data: any) => {
+  switch (data.type) {
+    case 'step_change':
+      handleStepChange(data.data)
+      break
+    case 'progress':
+      updateProgress(data.data)
+      break
+    case 'agent_status':
+      updateAgentStatus(data.data)
+      break
+    case 'log':
+      addLog(data.data.level || 'info', data.data.message)
+      break
+    case 'completed':
+      handleCompleted(data.data)
+      break
+    case 'error':
+      handleError(data.data)
+      break
+    case 'connected':
+      addLog('success', 'WebSocket连接已建立')
+      break
+    case 'ping':
+      // 处理心跳包
+      break
+    default:
+      console.log('未知消息类型:', data.type)
+  }
+}
+
+const updateProgress = (data: any) => {
+  progressPercentage.value = data.progress
+  const stepName = data.current_step || data.step_name || ''
+  currentStep.value = stepName
+  estimatedTime.value = data.estimated_time_remaining
+
+  // 使用 step_id 更新工作流步骤状态
+  if (data.step_id) {
+    const stepIndex = workflowSteps.value.findIndex(step => step.id === data.step_id)
+    if (stepIndex !== -1) {
+      workflowSteps.value[stepIndex].status = 'running'
+      workflowSteps.value[stepIndex].progress = data.progress
+    }
+  }
+
+  addLog('info', stepName ? `${stepName}: ${data.message}` : data.message)
+}
+
+const handleStepChange = (data: StepChangeData) => {
+  const { previous_step_id, next_step_id, step_name, message } = data
+
+  // 完成上一步
+  if (previous_step_id) {
+    const prevStep = workflowSteps.value.find(s => s.id === previous_step_id)
+    if (prevStep) {
+      prevStep.status = 'completed'
+      prevStep.progress = 100
+    }
+  }
+
+  // 启动下一步
+  if (next_step_id && next_step_id !== 'completed') {
+    const nextStep = workflowSteps.value.find(s => s.id === next_step_id)
+    if (nextStep) {
+      nextStep.status = 'running'
+    }
+  }
+
+  addLog('info', message || `步骤切换: ${step_name}`)
+}
+
+const updateAgentStatus = (data: any) => {
+  const existingAgent = agentStatus.value.find(agent => agent.name === data.agent_name)
+
+  if (existingAgent) {
+    Object.assign(existingAgent, data)
+  } else {
+    agentStatus.value.push({
+      name: data.agent_name,
+      status: data.status,
+      start_time: new Date(),
+      ...data
+    })
+  }
+
+  const currentAgent = existingAgent || agentStatus.value[agentStatus.value.length - 1]
+  if (data.status === 'completed' && currentAgent) {
+    currentAgent.end_time = new Date()
+  }
+
+  addLog('info', `Agent ${data.agent_name}: ${data.status}`)
+}
+
+const handleCompleted = (data: any) => {
+  auditStatus.value = 'completed'
+  progressPercentage.value = 100
+
+  // 标记所有步骤为完成
+  workflowSteps.value.forEach(step => {
+    if (step.status !== 'error') {
+      step.status = 'completed'
+      step.progress = 100
+    }
+  })
+
+  // 标记所有Agent为完成
+  agentStatus.value.forEach(agent => {
+    if (agent.status !== 'error') {
+      agent.status = 'completed'
+      agent.end_time = new Date()
+    }
+  })
+
+  addLog('success', '审计任务完成！')
+  ElMessage.success('审计任务已完成')
+}
+
+const handleError = (data: any) => {
+  auditStatus.value = 'failed'
+  addLog('error', `审计失败: ${data.error}`)
+  ElMessage.error('审计任务失败')
+}
+
+// 日志相关方法
+const addLog = (level: string, message: string) => {
+  logs.value.push({
+    timestamp: new Date(),
+    level,
+    message
+  })
+
+  // 自动滚动到底部
+  nextTick(() => {
+    if (logBottom.value) {
+      logBottom.value.scrollIntoView({ behavior: 'smooth' })
+    }
+  })
+
+  // 限制日志数量
+  if (logs.value.length > 100) {
+    logs.value = logs.value.slice(-100)
+  }
+}
+
+const clearLogs = () => {
+  logs.value = []
+  addLog('info', '日志已清空')
+}
+
+const downloadLogs = () => {
+  const logText = logs.value.map(log =>
+    `[${formatLogTime(log.timestamp)}] [${log.level.toUpperCase()}] ${log.message}`
+  ).join('\n')
+
+  const blob = new Blob([logText], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `audit_logs_${taskId.value}_${new Date().getTime()}.txt`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+// 操作方法
+const pauseAudit = async () => {
+  try {
+    isPausing.value = true
+    await apiService.post(`/audit/${taskId.value}/pause`)
+    auditStatus.value = 'paused'
+    addLog('warning', '审计任务已暂停')
+    ElMessage.success('审计任务已暂停')
+  } catch (error: any) {
+    ElMessage.error('暂停失败: ' + (error.message || '未知错误'))
+  } finally {
+    isPausing.value = false
+  }
+}
+
+const resumeAudit = async () => {
+  try {
+    isResuming.value = true
+    await apiService.post(`/audit/${taskId.value}/resume`)
+    auditStatus.value = 'processing'
+    addLog('info', '审计任务已恢复')
+    ElMessage.success('审计任务已恢复')
+  } catch (error: any) {
+    ElMessage.error('恢复失败: ' + (error.message || '未知错误'))
+  } finally {
+    isResuming.value = false
+  }
+}
+
+const cancelAudit = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要取消当前审计任务吗？取消后无法恢复。',
+      '确认取消',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    isCancelling.value = true
+    await apiService.delete(`/audit/${taskId.value}`)
+    auditStatus.value = 'cancelled'
+    addLog('warning', '审计任务已取消')
+    ElMessage.success('审计任务已取消')
+
+    // 延迟跳转
+    setTimeout(() => {
+      router.push('/audit/upload')
+    }, 2000)
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error('取消失败: ' + (error.message || '未知错误'))
+    }
+  } finally {
+    isCancelling.value = false
+  }
+}
+
+const viewResults = () => {
+  router.push(`/results/${taskId.value}`)
+}
+
+const goBack = () => {
+  router.push('/audit/upload')
+}
+
+// 工具函数
+const formatTime = (seconds: number): string => {
+  if (seconds < 60) return `${Math.ceil(seconds)}秒`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  return `${minutes}分${Math.ceil(remainingSeconds)}秒`
+}
+
+const formatDuration = (seconds: number): string => {
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const secs = Math.floor(seconds % 60)
+
+  if (hours > 0) {
+    return `${hours}小时${minutes}分${secs}秒`
+  } else if (minutes > 0) {
+    return `${minutes}分${secs}秒`
+  } else {
+    return `${secs}秒`
+  }
+}
+
+const formatLogTime = (date: Date): string => {
+  return date.toLocaleTimeString('zh-CN', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
+
+const calculateDuration = (startTime: Date, endTime?: Date): string => {
+  const end = endTime || new Date()
+  const duration = Math.floor((end.getTime() - startTime.getTime()) / 1000)
+  return formatDuration(duration)
+}
+
+// 样式类函数
+const getStepClass = (status: string) => {
+  return `step-${status}`
+}
+
+const getConnectorClass = (status: string) => {
+  return `connector-${status}`
+}
+
+const getAgentClass = (status: string) => {
+  return `agent-${status}`
+}
+
+const getAgentIcon = (agentName: string) => {
+  const iconMap: Record<string, any> = {
+    'coordinator': View,
+    'contract_analyzer': Document,
+    'invoice_analyzer': Document,
+    'cross_validator': Warning
+  }
+  return iconMap[agentName] || InfoFilled
+}
+
+const getAgentDisplayName = (agentName: string): string => {
+  const nameMap: Record<string, string> = {
+    'coordinator': '协调器Agent',
+    'contract_analyzer': '合同分析Agent',
+    'invoice_analyzer': '发票分析Agent',
+    'cross_validator': '交叉验证Agent'
+  }
+  return nameMap[agentName] || agentName
+}
+
+const getAgentStatusType = (status: string) => {
+  const typeMap: Record<string, string> = {
+    'idle': 'info',
+    'running': 'warning',
+    'completed': 'success',
+    'error': 'danger'
+  }
+  return typeMap[status] || 'info'
+}
+
+const getAgentStatusText = (status: string): string => {
+  const textMap: Record<string, string> = {
+    'idle': '等待中',
+    'running': '运行中',
+    'completed': '已完成',
+    'error': '错误'
+  }
+  return textMap[status] || status
+}
+
+const getLogClass = (level: string) => {
+  return `log-${level}`
+}
+
+const getLogIcon = (level: string) => {
+  const iconMap: Record<string, any> = {
+    'info': InfoFilled,
+    'success': SuccessFilled,
+    'warning': Warning,
+    'error': Close
+  }
+  return iconMap[level] || InfoFilled
+}
+
+const formatSummaryLabel = (key: string | number): string => {
+  const labelMap: Record<string, string> = {
+    'confidence': '置信度',
+    'processed_invoices': '处理发票数',
+    'duplicates_found': '发现重复',
+    'average_confidence': '平均置信度'
+  }
+  return labelMap[String(key)] || String(key)
+}
+
+const syncStatus = async () => {
+  const status = await apiService.get(`/audit/${taskId.value}/status`, undefined, { loading: false } as any)
+  auditStatus.value = status.status
+  progressPercentage.value = status.progress
+  currentStep.value = status.current_step
+  estimatedTime.value = status.estimated_time_remaining
+  totalFiles.value = status.total_files || 0
+  processedFiles.value = status.processed_files || 0
+  processingTime.value = status.processing_time || 0
+  confidenceScore.value = status.confidence_score || 0
+  agentStatus.value = Object.entries(status.agent_status || {}).map(([name, data]: [string, any]) => ({
+    name,
+    ...data
+  }))
+
+  if (status.status === 'completed') {
+    handleCompleted({ task_id: taskId.value })
+    if (statusPollTimer) {
+      clearInterval(statusPollTimer)
+      statusPollTimer = null
+    }
+  } else if (status.status === 'failed') {
+    handleError({ error: status.error_message || '审计任务失败' })
+    if (statusPollTimer) {
+      clearInterval(statusPollTimer)
+      statusPollTimer = null
+    }
+  }
+}
+
+const formatSummaryValue = (value: any): string => {
+  if (typeof value === 'number') {
+    if (value < 1) {
+      return `${(value * 100).toFixed(1)}%`
+    }
+    return value.toString()
+  }
+  return String(value)
+}
 
 // 生命周期
 onMounted(async () => {
-  await loadTask()
-
-  if (task.value && task.value.status === 'processing') {
+  if (taskId.value) {
+    // 连接WebSocket
     connectWebSocket()
 
-    // 定期刷新任务状态
-    refreshTimer = setInterval(async () => {
-      await loadTask()
-    }, 5000)
+    // 获取初始状态
+    try {
+      await syncStatus()
+      statusPollTimer = setInterval(() => {
+        syncStatus().catch(error => {
+          console.error('轮询状态失败:', error)
+        })
+      }, 3000)
+
+      // 添加初始日志
+      addLog('info', '审计页面已加载')
+      addLog('info', `当前任务ID: ${taskId.value}`)
+    } catch (error) {
+      console.error('获取状态失败:', error)
+      addLog('error', '无法获取审计状态')
+    }
   }
 })
 
 onUnmounted(() => {
-  if (websocket) {
-    websocket.close()
-    websocket = null
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer)
+    wsReconnectTimer = null
   }
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = null
+  if (statusPollTimer) {
+    clearInterval(statusPollTimer)
+    statusPollTimer = null
+  }
+  if (wsConnection) {
+    wsConnection.onclose = null  // 防止重连
+    wsConnection.close()
+    wsConnection = null
   }
 })
 </script>
 
 <style scoped>
-.processing-container {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 2rem;
+.processing-page {
+  padding: 24px;
 }
 
-.processing-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 2rem;
+.page-header {
+  margin-bottom: 24px;
 }
 
-.back-button {
-  font-size: 1rem;
+.header-content {
+  margin-top: 16px;
 }
 
-.processing-header h2 {
-  font-size: 1.8rem;
+.page-title {
+  font-size: 28px;
   font-weight: 600;
-  color: #1f2937;
+  color: #303133;
+  margin-bottom: 8px;
+}
+
+.page-description {
+  font-size: 16px;
+  color: #606266;
   margin: 0;
 }
 
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
+.main-content {
+  margin-top: 24px;
 }
 
 .status-card {
-  margin-bottom: 2rem;
+  margin-bottom: 24px;
 }
 
-.loading-container {
-  padding: 2rem;
+.status-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 32px;
 }
 
-.task-status {
+.status-info {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
+  gap: 8px;
 }
 
-.task-info h3 {
-  font-size: 1.3rem;
-  color: #1f2937;
-  margin-bottom: 0.5rem;
-}
-
-.task-meta {
+.status-item {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.task-id {
-  color: #6b7280;
-  font-size: 0.9rem;
+.status-label {
+  font-size: 14px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.status-value {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 600;
 }
 
 .progress-section {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  flex: 1;
+  max-width: 400px;
 }
 
 .progress-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 8px;
+}
+
+.progress-label {
+  font-size: 14px;
+  color: #606266;
   font-weight: 500;
 }
 
-.progress-percentage {
-  color: #3b82f6;
+.progress-value {
+  font-size: 16px;
+  color: #303133;
   font-weight: 600;
 }
 
-.current-step {
+.main-progress {
+  margin-bottom: 8px;
+}
+
+.workflow-card {
+  margin-bottom: 24px;
+}
+
+.card-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  color: #6b7280;
-  font-size: 0.9rem;
+  gap: 8px;
 }
 
-.task-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 1rem;
+.header-icon {
+  font-size: 18px;
+  color: #409EFF;
 }
 
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 1rem;
-  background: #f8fafc;
-  border-radius: 8px;
-}
-
-.stat-label {
-  color: #6b7280;
-  font-size: 0.9rem;
-  margin-bottom: 0.5rem;
-}
-
-.stat-value {
+.header-title {
+  font-size: 16px;
   font-weight: 600;
-  color: #1f2937;
+  color: #303133;
 }
 
+.header-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+.workflow-content {
+  margin-top: 16px;
+}
+
+.steps-container {
+  position: relative;
+  padding: 24px 0;
+}
+
+.step-item {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 32px;
+  position: relative;
+}
+
+.step-item:last-child {
+  margin-bottom: 0;
+}
+
+.step-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #F5F7FA;
+  border: 2px solid #E4E7ED;
+  color: #909399;
+  font-size: 20px;
+  flex-shrink: 0;
+  margin-right: 16px;
+  z-index: 2;
+}
+
+.step-item.step-completed .step-icon {
+  background-color: #F0F9FF;
+  border-color: #409EFF;
+  color: #409EFF;
+}
+
+.step-item.step-running .step-icon {
+  background-color: #FDF6EC;
+  border-color: #E6A23C;
+  color: #E6A23C;
+}
+
+.step-item.step-error .step-icon {
+  background-color: #FEF0F0;
+  border-color: #F56C6C;
+  color: #F56C6C;
+}
+
+.step-content {
+  flex: 1;
+  padding-top: 8px;
+}
+
+.step-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.step-description {
+  font-size: 14px;
+  color: #606266;
+  margin-bottom: 8px;
+}
+
+.step-progress {
+  width: 200px;
+}
+
+.step-connector {
+  position: absolute;
+  left: 23px;
+  top: 48px;
+  width: 2px;
+  height: 32px;
+  background-color: #E4E7ED;
+  z-index: 1;
+}
+
+.step-item.step-completed .step-connector {
+  background-color: #409EFF;
+}
+
+.step-item.step-running .step-connector {
+  background-color: #E6A23C;
+}
+
+.step-item.step-error .step-connector {
+  background-color: #F56C6C;
+}
+
+.agents-card,
 .logs-card {
-  margin-bottom: 2rem;
+  margin-bottom: 24px;
+  height: 500px;
 }
 
-.log-container {
-  height: 300px;
+.agents-content {
+  margin-top: 16px;
+  height: calc(100% - 60px);
   overflow-y: auto;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  padding: 1rem;
-  background: #f8fafc;
 }
 
-.log-container.auto-scroll {
-  scroll-behavior: smooth;
+.agent-item {
+  padding: 16px;
+  border: 1px solid #EBEEF5;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  background-color: #FAFAFA;
 }
 
-.log-list {
+.agent-item.agent-completed {
+  border-color: #E1F3D8;
+  background-color: #F0F9FF;
+}
+
+.agent-item.agent-running {
+  border-color: #F7E6D0;
+  background-color: #FDF6EC;
+}
+
+.agent-item.agent-error {
+  border-color: #FDE2E2;
+  background-color: #FEF0F0;
+}
+
+.agent-header {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
 }
 
-.log-item {
+.agent-info {
   display: flex;
-  gap: 1rem;
-  padding: 0.5rem;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.agent-icon {
+  font-size: 24px;
+  color: #409EFF;
+}
+
+.agent-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.agent-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.agent-details {
+  font-size: 13px;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.detail-label {
+  color: #606266;
+  font-weight: 500;
+  min-width: 60px;
+}
+
+.detail-value {
+  color: #303133;
+  flex: 1;
+}
+
+.mini-progress {
+  width: 60px;
+  margin-right: 8px;
+}
+
+.progress-text {
+  color: #409EFF;
+  font-weight: 600;
+}
+
+.success-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  background-color: #F0F9FF;
   border-radius: 4px;
-  font-family: 'Courier New', monospace;
-  font-size: 0.9rem;
 }
 
-.log-item.log-info {
-  background: rgba(59, 130, 246, 0.1);
-  border-left: 3px solid #3b82f6;
+.summary-label {
+  color: #409EFF;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-.log-item.log-warning {
-  background: rgba(245, 158, 11, 0.1);
-  border-left: 3px solid #f59e0b;
+.summary-value {
+  color: #303133;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.log-item.log-error {
-  background: rgba(239, 68, 68, 0.1);
-  border-left: 3px solid #ef4444;
+.error-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: #FEF0F0;
+  border-radius: 6px;
 }
 
-.log-item.log-success {
-  background: rgba(34, 197, 94, 0.1);
-  border-left: 3px solid #22c55e;
+.error-icon {
+  color: #F56C6C;
+  font-size: 16px;
+}
+
+.error-message {
+  color: #F56C6C;
+  font-size: 13px;
+}
+
+.logs-content {
+  height: calc(100% - 60px);
+  overflow-y: auto;
+  background-color: #1F2937;
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.log-entries {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.log-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .log-time {
-  color: #6b7280;
+  color: #9CA3AF;
   min-width: 80px;
 }
 
-.log-level {
-  color: #1f2937;
-  font-weight: 600;
-  min-width: 50px;
+.log-icon {
+  font-size: 14px;
+}
+
+.log-entry.log-info .log-icon {
+  color: #60A5FA;
+}
+
+.log-entry.log-success .log-icon {
+  color: #34D399;
+}
+
+.log-entry.log-warning .log-icon {
+  color: #FBBF24;
+}
+
+.log-entry.log-error .log-icon {
+  color: #F87171;
 }
 
 .log-message {
   flex: 1;
-  color: #374151;
+  word-break: break-all;
 }
 
-.empty-logs {
-  text-align: center;
-  padding: 2rem;
+.log-entry.log-info .log-message {
+  color: #E5E7EB;
+}
+
+.log-entry.log-success .log-message {
+  color: #34D399;
+}
+
+.log-entry.log-warning .log-message {
+  color: #FBBF24;
+}
+
+.log-entry.log-error .log-message {
+  color: #F87171;
+}
+
+.log-bottom {
+  height: 1px;
+}
+
+.action-card {
+  margin-bottom: 24px;
+}
+
+.action-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 32px;
 }
 
 .action-buttons {
   display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  align-items: center;
+  gap: 12px;
 }
 
-.primary-actions {
+.stats-section {
   display: flex;
-  justify-content: center;
-  gap: 1rem;
+  gap: 24px;
 }
 
-.primary-actions .el-button {
-  min-width: 140px;
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.stat-label {
+  color: #606266;
+}
+
+.stat-value {
+  color: #303133;
   font-weight: 600;
 }
 
-.secondary-actions {
-  display: flex;
-  justify-content: center;
-  gap: 1rem;
+.rotating {
+  animation: rotate 2s linear infinite;
 }
 
-.secondary-actions .el-button {
-  min-width: 100px;
-}
-
-.error-state {
-  text-align: center;
-  padding: 2rem;
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 768px) {
-  .processing-container {
-    padding: 1rem;
+  .processing-page {
+    padding: 16px;
   }
 
-  .processing-header {
+  .page-title {
+    font-size: 24px;
+  }
+
+  .status-content {
     flex-direction: column;
-    align-items: flex-start;
+    gap: 16px;
   }
 
-  .task-meta {
+  .progress-section {
+    max-width: 100%;
+  }
+
+  .action-content {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
+    gap: 16px;
+    align-items: stretch;
   }
 
-  .progress-header {
+  .stats-section {
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
+    gap: 8px;
   }
 
-  .task-stats {
-    grid-template-columns: repeat(2, 1fr);
+  .success-summary {
+    grid-template-columns: 1fr;
   }
-
-  .log-item {
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .action-buttons {
-    flex-direction: column;
-  }
-}
-
-/* 动态进度条动画效果 */
-/* 进度条动画效果 */
-.progress-bar-animated {
-  position: relative;
-  overflow: hidden;
-}
-
-.progress-bar-animated::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
-  animation: progress-shimmer 2s infinite;
-}
-
-@keyframes progress-shimmer {
-  0% { left: -100%; }
-  100% { left: 100%; }
-}
-
-/* 处理中阶段的步骤图标动画 */
-.step-icon.processing {
-  animation: step-processing 1.5s ease-in-out infinite;
-}
-
-@keyframes step-processing {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
-}
-
-/* 处理日志的进入动画 */
-.log-item {
-  animation: log-slide-in 0.3s ease-out;
-}
-
-@keyframes log-slide-in {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-/* 当前处理阶段的高亮效果 */
-.current-step {
-  position: relative;
-}
-
-.current-step::before {
-  content: '';
-  position: absolute;
-  left: -8px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 4px;
-  height: 20px;
-  background: #409eff;
-  border-radius: 2px;
-  animation: step-highlight 2s ease-in-out infinite;
-}
-
-@keyframes step-highlight {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
-}
-
-/* 处理指示器动画 */
-.processing-indicator {
-  display: flex;
-  gap: 4px;
-  margin-left: 8px;
-}
-
-.processing-dot {
-  width: 6px;
-  height: 6px;
-  background: #409eff;
-  border-radius: 50%;
-  animation: processing-pulse 1.4s ease-in-out infinite both;
-}
-
-.processing-dot:nth-child(1) { animation-delay: -0.32s; }
-.processing-dot:nth-child(2) { animation-delay: -0.16s; }
-.processing-dot:nth-child(3) { animation-delay: 0s; }
-
-@keyframes processing-pulse {
-  0%, 80%, 100% {
-    transform: scale(0.8);
-    opacity: 0.5;
-  }
-  40% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-/* 重新开始按钮的动画 */
-.restart-hint {
-  animation: bounce 2s infinite;
-}
-
-@keyframes bounce {
-  0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
-  40% { transform: translateY(-5px); }
-  60% { transform: translateY(-3px); }
-}
-
-/* 空状态图标的动画 */
-.empty-state-icon {
-  animation: float 3s ease-in-out infinite;
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
 }
 </style>

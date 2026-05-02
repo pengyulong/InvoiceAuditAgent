@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能合同发票审计系统 - UI原型</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        .primary-blue { color: #2563EB; }
+        .primary-blue-bg { background-color: #2563EB; }
+        .success-green { color: #10B981; }
+        .success-green-bg { background-color: #10B981; }
+        .warning-orange { color: #F59E0B; }
+        .warning-orange-bg { background-color: #F59E0B; }
+        .error-red { color: #EF4444; }
+        .error-red-bg { background-color: #EF4444; }
+
+        .drag-zone {
+            border: 2px dashed #D1D5DB;
+            transition: all 0.3s ease;
+        }
+
+        .drag-zone:hover {
+            border-color: #2563EB;
+            background-color: #EFF6FF;
+        }
+
+        .drag-zone.drag-over {
+            border-color: #2563EB;
+            background-color: #DBEAFE;
+            transform: scale(1.02);
+        }
+
+        .agent-card {
+            transition: all 0.3s ease;
+        }
+
+        .agent-card.processing {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+        }
+
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <i class="fas fa-file-invoice-dollar text-blue-600 text-2xl mr-3"></i>
+                    <h1 class="text-xl font-semibold text-gray-900">智能合同发票审计系统</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm text-gray-500">原型演示 v1.0</span>
+                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="bg-white border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav class="flex space-x-8">
+                <button onclick="switchTab('home')" class="tab-btn py-4 px-1 border-b-2 border-blue-500 text-blue-600 font-medium">
+                    首页
+                </button>
+                <button onclick="switchTab('upload')" class="tab-btn py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    文件上传
+                </button>
+                <button onclick="switchTab('progress')" class="tab-btn py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    审计进度
+                </button>
+                <button onclick="switchTab('results')" class="tab-btn py-4 px-1 border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300">
+                    结果展示
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Home Tab -->
+        <div id="home" class="tab-content active">
+            <!-- Hero Section -->
+            <section class="text-center py-16">
+                <h2 class="text-4xl font-bold text-gray-900 mb-4">
+                    AI驱动的智能审计解决方案
+                </h2>
+                <p class="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
+                    通过先进的多模态大模型技术，自动化审计采购合同与发票的匹配性、合规性和准确性
+                </p>
+                <button onclick="switchTab('upload')" class="primary-blue-bg text-white px-8 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                    <i class="fas fa-play mr-2"></i>
+                    开始审计
+                </button>
+            </section>
+
+            <!-- Features -->
+            <section class="py-16">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div class="text-center p-6 bg-white rounded-lg shadow-sm">
+                        <div class="w-12 h-12 primary-blue-bg rounded-lg flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-robot text-white"></i>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">自动化审计</h3>
+                        <p class="text-gray-600">替代人工审核，提高审计效率90%以上</p>
+                    </div>
+                    <div class="text-center p-6 bg-white rounded-lg shadow-sm">
+                        <div class="w-12 h-12 success-green-bg rounded-lg flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-brain text-white"></i>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">智能分析</h3>
+                        <p class="text-gray-600">利用多模态大模型理解合同和发票图像内容</p>
+                    </div>
+                    <div class="text-center p-6 bg-white rounded-lg shadow-sm">
+                        <div class="w-12 h-12 warning-orange-bg rounded-lg flex items-center justify-center mx-auto mb-4">
+                            <i class="fas fa-shield-alt text-white"></i>
+                        </div>
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">风险识别</h3>
+                        <p class="text-gray-600">自动发现重复发票、金额不符等异常问题</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Upload Tab -->
+        <div id="upload" class="tab-content">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-gray-900 mb-2">文件上传</h2>
+                <p class="text-gray-600">上传包含合同和发票的ZIP文件开始审计</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Upload Zone -->
+                <div class="lg:col-span-2">
+                    <div id="dropZone" class="drag-zone bg-white rounded-lg p-12 text-center cursor-pointer">
+                        <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+                        <h3 class="text-lg font-medium text-gray-900 mb-2">拖拽ZIP文件到此处</h3>
+                        <p class="text-gray-500 mb-4">或者点击选择文件</p>
+                        <p class="text-sm text-gray-400">支持格式：ZIP（包含1份合同和多份发票），最大50MB</p>
+                        <input type="file" id="fileInput" accept=".zip" class="hidden">
+                    </div>
+
+                    <!-- File Preview -->
+                    <div id="filePreview" class="mt-6 hidden">
+                        <h4 class="text-lg font-medium text-gray-900 mb-4">已上传文件</h4>
+                        <div class="bg-white rounded-lg p-4">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center">
+                                    <i class="fas fa-file-archive text-yellow-500 text-2xl mr-3"></i>
+                                    <div>
+                                        <p class="font-medium text-gray-900" id="fileName">合同发票审计包.zip</p>
+                                        <p class="text-sm text-gray-500" id="fileSize">2.5 MB</p>
+                                    </div>
+                                </div>
+                                <button onclick="removeFile()" class="text-red-500 hover:text-red-700">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                            <div class="border-t pt-4">
+                                <p class="text-sm font-medium text-gray-700 mb-2">解压文件预览：</p>
+                                <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                    <div class="flex items-center text-sm">
+                                        <i class="fas fa-file-contract text-blue-500 mr-2"></i>
+                                        <span>采购合同.pdf</span>
+                                    </div>
+                                    <div class="flex items-center text-sm">
+                                        <i class="fas fa-file-invoice text-green-500 mr-2"></i>
+                                        <span>发票001.pdf</span>
+                                    </div>
+                                    <div class="flex items-center text-sm">
+                                        <i class="fas fa-file-invoice text-green-500 mr-2"></i>
+                                        <span>发票002.pdf</span>
+                                    </div>
+                                    <div class="flex items-center text-sm">
+                                        <i class="fas fa-file-invoice text-green-500 mr-2"></i>
+                                        <span>发票003.pdf</span>
+                                    </div>
+                                    <div class="flex items-center text-sm">
+                                        <i class="fas fa-file-invoice text-green-500 mr-2"></i>
+                                        <span>发票004.pdf</span>
+                                    </div>
+                                    <div class="flex items-center text-sm">
+                                        <i class="fas fa-file-invoice text-green-500 mr-2"></i>
+                                        <span>发票005.pdf</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="mt-6 flex space-x-4">
+                        <button onclick="startAudit()" class="primary-blue-bg text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50" id="startBtn" disabled>
+                            <i class="fas fa-play mr-2"></i>
+                            开始审计
+                        </button>
+                        <button onclick="clearAll()" class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors">
+                            <i class="fas fa-redo mr-2"></i>
+                            清除所有
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Instructions Panel -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-lg p-6">
+                        <h4 class="text-lg font-medium text-gray-900 mb-4">上传说明</h4>
+                        <div class="space-y-4">
+                            <div>
+                                <h5 class="font-medium text-gray-700 mb-1">支持格式</h5>
+                                <p class="text-sm text-gray-600">ZIP压缩包，内含PDF、PNG、JPG格式的合同和发票文件</p>
+                            </div>
+                            <div>
+                                <h5 class="font-medium text-gray-700 mb-1">文件限制</h5>
+                                <ul class="text-sm text-gray-600 space-y-1">
+                                    <li>• ZIP文件大小：≤ 50MB</li>
+                                    <li>• 合同文件：1份</li>
+                                    <li>• 发票文件：多份</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <h5 class="font-medium text-gray-700 mb-1">命名规范</h5>
+                                <p class="text-sm text-gray-600">建议使用清晰的文件名，便于识别</p>
+                            </div>
+                            <div>
+                                <h5 class="font-medium text-gray-700 mb-1">示例文件</h5>
+                                <button class="text-sm text-blue-600 hover:text-blue-800">
+                                    <i class="fas fa-download mr-1"></i>
+                                    下载示例
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Tab -->
+        <div id="progress" class="tab-content">
+            <!-- Status Bar -->
+            <div class="bg-white rounded-lg p-4 mb-6 shadow-sm">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <span class="text-sm text-gray-500">任务ID:</span>
+                        <span class="font-mono ml-2">AUDIT-2024-001</span>
+                    </div>
+                    <div class="flex items-center space-x-6">
+                        <div>
+                            <span class="text-sm text-gray-500">状态:</span>
+                            <span class="ml-2 font-medium text-blue-600">处理中</span>
+                        </div>
+                        <div>
+                            <span class="text-sm text-gray-500">预计剩余:</span>
+                            <span class="ml-2 font-medium">2分钟</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <div class="bg-gray-200 rounded-full h-2">
+                        <div class="progress-bar primary-blue-bg h-2 rounded-full" style="width: 65%"></div>
+                    </div>
+                    <p class="text-sm text-gray-500 mt-1">整体进度: 65%</p>
+                </div>
+            </div>
+
+            <!-- Workflow Visualization -->
+            <div class="bg-white rounded-lg p-6 mb-6 shadow-sm">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Agent工作流程</h3>
+                <div class="flex items-center justify-between mb-6">
+                    <div class="flex flex-col items-center">
+                        <div class="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center text-white mb-2">
+                            <i class="fas fa-check"></i>
+                        </div>
+                        <span class="text-sm font-medium">文件上传</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-green-500 mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div class="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center text-white mb-2">
+                            <i class="fas fa-check"></i>
+                        </div>
+                        <span class="text-sm font-medium">合同分析</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-green-500 mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div class="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center text-white mb-2">
+                            <i class="fas fa-check"></i>
+                        </div>
+                        <span class="text-sm font-medium">发票分析</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-blue-500 mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div class="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center text-white mb-2 agent-card processing">
+                            <i class="fas fa-cog fa-spin"></i>
+                        </div>
+                        <span class="text-sm font-medium text-blue-600">交叉验证</span>
+                    </div>
+                    <div class="flex-1 h-0.5 bg-gray-300 mx-2"></div>
+                    <div class="flex flex-col items-center">
+                        <div class="w-12 h-12 bg-gray-300 rounded-full flex items-center justify-center text-white mb-2">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <span class="text-sm font-medium text-gray-500">报告生成</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed Progress -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Agent Status -->
+                <div class="bg-white rounded-lg p-6 shadow-sm">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Agent状态</h3>
+                    <div class="space-y-4">
+                        <div class="agent-status">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium">Coordinator Agent</span>
+                                <span class="text-sm text-green-600"><i class="fas fa-check-circle mr-1"></i>完成</span>
+                            </div>
+                            <div class="text-sm text-gray-600 space-y-1">
+                                <p>• 文件解析完成 (6个文件)</p>
+                                <p>• 任务分发完成</p>
+                            </div>
+                        </div>
+
+                        <div class="agent-status">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium">Contract Analyzer</span>
+                                <span class="text-sm text-green-600"><i class="fas fa-check-circle mr-1"></i>完成</span>
+                            </div>
+                            <div class="text-sm text-gray-600 space-y-1">
+                                <p>• 合同信息提取完成</p>
+                                <p>• 置信度: 92%</p>
+                            </div>
+                        </div>
+
+                        <div class="agent-status">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium">Invoice Analyzer</span>
+                                <span class="text-sm text-green-600"><i class="fas fa-check-circle mr-1"></i>完成</span>
+                            </div>
+                            <div class="text-sm text-gray-600 space-y-1">
+                                <p>• 5张发票处理完成</p>
+                                <p>• 重复检测完成</p>
+                            </div>
+                        </div>
+
+                        <div class="agent-status">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-medium">Cross-Validator</span>
+                                <span class="text-sm text-blue-600"><i class="fas fa-spinner fa-spin mr-1"></i>处理中</span>
+                            </div>
+                            <div class="text-sm text-gray-600 space-y-1">
+                                <p>• 正在进行匹配验证...</p>
+                                <p>• 进度: 3/5 项完成</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Real-time Logs -->
+                <div class="bg-white rounded-lg p-6 shadow-sm">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">实时日志</h3>
+                    <div class="bg-gray-900 text-green-400 p-4 rounded-lg font-mono text-sm h-64 overflow-y-auto">
+                        <p>[2024-01-01 12:00:01] 🚀 开始审计任务...</p>
+                        <p>[2024-01-01 12:00:15] 📁 文件上传完成: 合同发票审计包.zip</p>
+                        <p>[2024-01-01 12:00:30] 🔍 Coordinator开始文件解析...</p>
+                        <p>[2024-01-01 12:00:45] 📄 发现1个合同文件，5个发票文件</p>
+                        <p>[2024-01-01 12:01:00] 🤖 Contract Analyzer开始处理...</p>
+                        <p>[2024-01-01 12:01:20] ✅ 合同信息提取完成</p>
+                        <p>[2024-01-01 12:01:25] 📋 合同编号: CONT001, 金额: ¥100,000</p>
+                        <p>[2024-01-01 12:01:30] 🤖 Invoice Analyzer开始处理...</p>
+                        <p>[2024-01-01 12:02:10] ✅ 发票批量处理完成</p>
+                        <p>[2024-01-01 12:02:15] 🔍 重复检测完成</p>
+                        <p>[2024-01-01 12:02:30] 🤖 Cross-Validator开始验证...</p>
+                        <p>[2024-01-01 12:02:45] ⚙️ 正在进行合同-发票匹配...</p>
+                        <p class="animate-pulse">[2024-01-01 12:03:00] 🔄 处理中...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Tab -->
+        <div id="results" class="tab-content">
+            <!-- Summary Cards -->
+            <div class="bg-white rounded-lg p-6 mb-6 shadow-sm">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">审计摘要</h3>
+                    <div class="flex items-center">
+                        <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+                            <i class="fas fa-check-circle mr-1"></i>
+                            审计通过
+                        </span>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                    <div class="text-center p-4 bg-blue-50 rounded-lg">
+                        <p class="text-sm text-gray-600 mb-1">合同金额</p>
+                        <p class="text-xl font-bold text-blue-600">¥100,000</p>
+                    </div>
+                    <div class="text-center p-4 bg-green-50 rounded-lg">
+                        <p class="text-sm text-gray-600 mb-1">发票总额</p>
+                        <p class="text-xl font-bold text-green-600">¥98,500</p>
+                    </div>
+                    <div class="text-center p-4 bg-yellow-50 rounded-lg">
+                        <p class="text-sm text-gray-600 mb-1">覆盖率</p>
+                        <p class="text-xl font-bold text-yellow-600">98.5%</p>
+                    </div>
+                    <div class="text-center p-4 bg-red-50 rounded-lg">
+                        <p class="text-sm text-gray-600 mb-1">问题数</p>
+                        <p class="text-xl font-bold text-red-600">2</p>
+                    </div>
+                </div>
+
+                <div class="text-sm text-gray-500">
+                    处理耗时: 2分35秒
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Contract Info -->
+                <div class="bg-white rounded-lg p-6 shadow-sm">
+                    <h4 class="text-lg font-medium text-gray-900 mb-4">合同信息</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <span class="text-sm text-gray-500">合同编号:</span>
+                            <p class="font-medium">CONT001</p>
+                        </div>
+                        <div>
+                            <span class="text-sm text-gray-500">买方:</span>
+                            <p class="font-medium">ABC科技有限公司</p>
+                        </div>
+                        <div>
+                            <span class="text-sm text-gray-500">卖方:</span>
+                            <p class="font-medium">XYZ供应商有限公司</p>
+                        </div>
+                        <div>
+                            <span class="text-sm text-gray-500">合同金额:</span>
+                            <p class="font-medium">¥100,000</p>
+                        </div>
+                        <div>
+                            <span class="text-sm text-gray-500">税率:</span>
+                            <p class="font-medium">13%</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-4 border-t">
+                        <h5 class="text-sm font-medium text-gray-700 mb-2">商品清单</h5>
+                        <div class="overflow-x-auto">
+                            <table class="text-sm">
+                                <thead>
+                                    <tr class="border-b">
+                                        <th class="text-left py-1">商品</th>
+                                        <th class="text-right py-1">数量</th>
+                                        <th class="text-right py-1">单价</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="border-b">
+                                        <td class="py-1">商品A</td>
+                                        <td class="text-right">100</td>
+                                        <td class="text-right">¥500</td>
+                                    </tr>
+                                    <tr class="border-b">
+                                        <td class="py-1">商品B</td>
+                                        <td class="text-right">50</td>
+                                        <td class="text-right">¥300</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="py-1">商品C</td>
+                                        <td class="text-right">20</td>
+                                        <td class="text-right">¥250</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Invoice List -->
+                <div class="bg-white rounded-lg p-6 shadow-sm">
+                    <h4 class="text-lg font-medium text-gray-900 mb-4">发票列表</h4>
+                    <div class="space-y-3">
+                        <div class="p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="font-medium">发票001</span>
+                                <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">正常</span>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                <p>金额: ¥19,800 | 税额: ¥2,574</p>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="font-medium">发票002</span>
+                                <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">正常</span>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                <p>金额: ¥29,700 | 税额: ¥3,861</p>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="font-medium">发票003</span>
+                                <span class="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">重复⚠️</span>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                <p>金额: ¥9,900 | 税额: ¥1,287</p>
+                                <p class="text-xs text-yellow-600 mt-1">与发票001重复</p>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="font-medium">发票004</span>
+                                <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">正常</span>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                <p>金额: ¥14,850 | 税额: ¥1,931</p>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="font-medium">发票005</span>
+                                <span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">正常</span>
+                            </div>
+                            <div class="text-sm text-gray-600">
+                                <p>金额: ¥24,250 | 税额: ¥3,153</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Issues -->
+                <div class="bg-white rounded-lg p-6 shadow-sm">
+                    <h4 class="text-lg font-medium text-gray-900 mb-4">发现的问题</h4>
+                    <div class="space-y-3">
+                        <div class="p-3 bg-red-50 rounded-lg border border-red-200">
+                            <div class="flex items-start">
+                                <i class="fas fa-exclamation-circle text-red-500 mt-1 mr-2"></i>
+                                <div>
+                                    <h5 class="font-medium text-red-800 mb-1">重复发票</h5>
+                                    <p class="text-sm text-red-700 mb-2">发票003与发票001内容重复</p>
+                                    <div class="text-xs text-red-600">
+                                        <p>建议: 核实是否为重复开票，如为错误请作废处理</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                            <div class="flex items-start">
+                                <i class="fas fa-exclamation-triangle text-yellow-500 mt-1 mr-2"></i>
+                                <div>
+                                    <h5 class="font-medium text-yellow-800 mb-1">数量差异</h5>
+                                    <p class="text-sm text-yellow-700 mb-2">商品B发票数量少于合同数量2件</p>
+                                    <div class="text-xs text-yellow-600">
+                                        <p>建议: 确认是否部分发货，或补充后续发票</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comparison Table -->
+            <div class="bg-white rounded-lg p-6 mt-6 shadow-sm">
+                <h4 class="text-lg font-medium text-gray-900 mb-4">合同-发票匹配对比</h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b bg-gray-50">
+                                <th class="text-left py-3 px-4 font-medium">商品</th>
+                                <th class="text-right py-3 px-4 font-medium">合同数量</th>
+                                <th class="text-right py-3 px-4 font-medium">发票总数</th>
+                                <th class="text-right py-3 px-4 font-medium">差异</th>
+                                <th class="text-center py-3 px-4 font-medium">状态</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="border-b">
+                                <td class="py-3 px-4">商品A</td>
+                                <td class="text-right py-3 px-4">100</td>
+                                <td class="text-right py-3 px-4">100</td>
+                                <td class="text-right py-3 px-4">0</td>
+                                <td class="text-center py-3 px-4">
+                                    <span class="text-green-600"><i class="fas fa-check-circle"></i></span>
+                                </td>
+                            </tr>
+                            <tr class="border-b">
+                                <td class="py-3 px-4">商品B</td>
+                                <td class="text-right py-3 px-4">50</td>
+                                <td class="text-right py-3 px-4">48</td>
+                                <td class="text-right py-3 px-4 text-red-600">-2</td>
+                                <td class="text-center py-3 px-4">
+                                    <span class="text-yellow-600"><i class="fas fa-exclamation-triangle"></i></span>
+                                </td>
+                            </tr>
+                            <tr class="border-b">
+                                <td class="py-3 px-4">商品C</td>
+                                <td class="text-right py-3 px-4">20</td>
+                                <td class="text-right py-3 px-4">20</td>
+                                <td class="text-right py-3 px-4">0</td>
+                                <td class="text-center py-3 px-4">
+                                    <span class="text-green-600"><i class="fas fa-check-circle"></i></span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="mt-6 flex flex-wrap gap-4">
+                <button class="primary-blue-bg text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                    <i class="fas fa-file-pdf mr-2"></i>
+                    导出PDF报告
+                </button>
+                <button class="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 transition-colors">
+                    <i class="fas fa-file-excel mr-2"></i>
+                    导出Excel
+                </button>
+                <button class="bg-gray-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-gray-700 transition-colors">
+                    <i class="fas fa-file-code mr-2"></i>
+                    导出JSON
+                </button>
+                <button class="bg-gray-200 text-gray-700 px-6 py-3 rounded-lg font-medium hover:bg-gray-300 transition-colors">
+                    <i class="fas fa-redo mr-2"></i>
+                    重新审计
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Tab switching
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+
+            // Remove active state from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('border-blue-500', 'text-blue-600');
+                btn.classList.add('border-transparent', 'text-gray-500');
+            });
+
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+
+            // Set active button
+            event.target.classList.remove('border-transparent', 'text-gray-500');
+            event.target.classList.add('border-blue-500', 'text-blue-600');
+        }
+
+        // File upload simulation
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const filePreview = document.getElementById('filePreview');
+        const startBtn = document.getElementById('startBtn');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                handleFileUpload(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+        });
+
+        function handleFileUpload(file) {
+            // Simulate file upload
+            dropZone.innerHTML = `
+                <i class="fas fa-spinner fa-spin text-4xl text-blue-500 mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">上传中...</h3>
+                <p class="text-gray-500">${file.name}</p>
+                <div class="mt-4">
+                    <div class="bg-gray-200 rounded-full h-2 w-64 mx-auto">
+                        <div class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+            `;
+
+            // Simulate progress
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 10;
+                dropZone.querySelector('.bg-blue-500').style.width = progress + '%';
+
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        showFilePreview(file);
+                    }, 500);
+                }
+            }, 100);
+        }
+
+        function showFilePreview(file) {
+            filePreview.classList.remove('hidden');
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = (file.size / 1024 / 1024).toFixed(1) + ' MB';
+            startBtn.disabled = false;
+
+            dropZone.innerHTML = `
+                <i class="fas fa-check-circle text-4xl text-green-500 mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">上传完成</h3>
+                <p class="text-gray-500">文件已成功上传并解析</p>
+            `;
+        }
+
+        function removeFile() {
+            filePreview.classList.add('hidden');
+            startBtn.disabled = true;
+            dropZone.innerHTML = `
+                <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">拖拽ZIP文件到此处</h3>
+                <p class="text-gray-500 mb-4">或者点击选择文件</p>
+                <p class="text-sm text-gray-400">支持格式：ZIP（包含1份合同和多份发票），最大50MB</p>
+            `;
+        }
+
+        function clearAll() {
+            removeFile();
+            fileInput.value = '';
+        }
+
+        function startAudit() {
+            // Switch to progress tab and start simulation
+            document.querySelector('[onclick="switchTab(\'progress\')"]').click();
+            simulateAuditProgress();
+        }
+
+        function simulateAuditProgress() {
+            let progress = 65;
+            const progressBar = document.querySelector('.progress-bar');
+            const interval = setInterval(() => {
+                progress += 1;
+                progressBar.style.width = progress + '%';
+
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        document.querySelector('[onclick="switchTab(\'results\')"]').click();
+                    }, 1000);
+                }
+            }, 200);
+        }
+    </script>
+</body>
+</html>

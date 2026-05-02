@@ -1,295 +1,386 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
-from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
-from typing import List
+from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Form
+from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import List, Optional
 import os
 import uuid
 import zipfile
-import tempfile
+import aiofiles
+# import python_magic  # 暂时移除以避免依赖问题
 from pathlib import Path
-import logging
-import asyncio
 
 from app.core.database import get_db
 from app.core.config import settings
 from app.services.file_service import FileService
-from app.models.audit import AuditTask, AuditStatus
-
-# 获取日志器
-logger = logging.getLogger(__name__)
+from app.models.audit import AuditTask
 
 router = APIRouter()
+file_service = FileService()
 
-@router.post("/zip")
-async def upload_zip_file(
+
+def _decode_zip_member_name(name: str) -> str:
+    """Recover ZIP member names that were encoded with non-ASCII encodings."""
+    for encoding in ("utf-8", "gbk", "cp936"):
+        try:
+            decoded = name.encode("cp437").decode(encoding)
+            if decoded:
+                return decoded
+        except UnicodeError:
+            continue
+    return name
+
+
+def _safe_zip_target(base_dir: Path, member_name: str) -> Path:
+    target = base_dir / Path(member_name)
+    resolved_base = base_dir.resolve()
+    resolved_target = target.resolve()
+    if resolved_base not in resolved_target.parents and resolved_target != resolved_base:
+        raise HTTPException(status_code=400, detail="ZIP文件包含非法路径")
+    return target
+
+
+def _build_file_summary(files: List[dict]) -> dict:
+    contracts = sum(1 for item in files if item.get("category") == "contract")
+    invoices = sum(1 for item in files if item.get("category") == "invoice")
+    others = len(files) - contracts - invoices
+    warnings = []
+    # 如果没有识别到合同但有发票，审计时协调器会自动将第一份文件视为合同
+    if contracts == 0 and invoices > 0:
+        contracts = 1
+        invoices -= 1
+        # 更新第一份原发票文件的 category
+        for item in files:
+            if item.get("category") == "invoice":
+                item["category"] = "contract"
+                break
+    if contracts != 1:
+        warnings.append(f"识别到{contracts}份合同，建议上传前确认ZIP中仅包含1份合同")
+    if invoices < 1:
+        warnings.append("未识别到发票文件")
+    return {
+        "contracts": contracts,
+        "invoices": invoices,
+        "others": others,
+        "warnings": warnings,
+    }
+
+
+def _write_sample_pdf(path: Path, title: str, lines: List[str]):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(path), pagesize=A4)
+    _, height = A4
+    y = height - 72
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(72, y, title)
+    y -= 36
+    c.setFont("Helvetica", 11)
+    for line in lines:
+        c.drawString(72, y, line)
+        y -= 20
+    c.save()
+
+
+def _ensure_sample_zip() -> Path:
+    sample_dir = Path(settings.upload_dir) / "samples"
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    sample_zip = sample_dir / "sample_contract_invoice_audit.zip"
+    if sample_zip.exists():
+        return sample_zip
+
+    work_dir = sample_dir / "sample_source"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    contract_pdf = work_dir / "contract_sample.pdf"
+    invoice_pdf = work_dir / "invoice_sample.pdf"
+
+    _write_sample_pdf(contract_pdf, "Sample Service Contract", [
+        "Contract No: SAMPLE-2026-001",
+        "Buyer: Demo Buyer Co., Ltd.",
+        "Seller: Demo Seller Co., Ltd.",
+        "Contract Date: 2026-05-01",
+        "Service Item: Promotion Service",
+        "Total Amount Including Tax: 50000.00 CNY",
+        "Tax Rate: 6%",
+        "Payment Terms: Pay within 30 days after invoice received.",
+    ])
+    _write_sample_pdf(invoice_pdf, "Sample VAT Invoice", [
+        "Invoice No: SAMPLE-INVOICE-001",
+        "Invoice Date: 2026-05-01",
+        "Buyer: Demo Buyer Co., Ltd.",
+        "Seller: Demo Seller Co., Ltd.",
+        "Item: Promotion Service",
+        "Amount Without Tax: 47169.81 CNY",
+        "Tax Rate: 6%",
+        "Tax Amount: 2830.19 CNY",
+        "Total Amount Including Tax: 50000.00 CNY",
+    ])
+
+    with zipfile.ZipFile(sample_zip, "w", zipfile.ZIP_DEFLATED) as zip_ref:
+        zip_ref.write(contract_pdf, contract_pdf.name)
+        zip_ref.write(invoice_pdf, invoice_pdf.name)
+    return sample_zip
+
+
+@router.get("/sample", summary="下载示例ZIP文件")
+async def download_sample_zip():
+    try:
+        sample_zip = _ensure_sample_zip()
+        return FileResponse(
+            path=sample_zip,
+            filename=sample_zip.name,
+            media_type="application/zip",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"生成示例文件失败: {str(e)}")
+
+
+@router.post("/zip", summary="上传ZIP文件")
+async def upload_zip(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    task_name: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db)
 ):
     """
-    上传ZIP文件（包含合同和发票）
+    上传包含合同和发票的ZIP文件
+
+    - **file**: ZIP文件，包含1份合同和多份发票
+    - **task_name**: 可选的任务名称
     """
-    logger.info(f"🚀 开始处理ZIP文件上传: filename={file.filename}, size={file.size}")
+    # 验证文件类型
+    if not file.filename.endswith('.zip'):
+        raise HTTPException(status_code=400, detail="只支持ZIP文件格式")
 
-    # 添加超时处理
-    try:
-        # 验证文件类型
-        logger.info(f"📋 验证文件类型: {file.filename}")
-        if not file.filename or not file.filename.endswith('.zip'):
-            error_msg = "只支持ZIP格式文件"
-            logger.error(f"❌ 文件类型验证失败: {error_msg}")
-            raise HTTPException(
-                status_code=400,
-                detail=error_msg
-            )
-
-        # 验证文件大小
-        logger.info(f"📏 验证文件大小: {file.size} bytes")
-        if file.size and file.size > settings.MAX_FILE_SIZE:
-            error_msg = f"文件大小超过限制({settings.MAX_FILE_SIZE} bytes)"
-            logger.error(f"❌ 文件大小验证失败: {error_msg}")
-            raise HTTPException(
-                status_code=400,
-                detail=error_msg
-            )
-
-        # 创建审计任务
-        logger.info("🆔 创建审计任务...")
-        task_id = str(uuid.uuid4())
-        audit_task = AuditTask(
-            id=task_id,
-            task_name=file.filename,
-            status=AuditStatus.PENDING,
-            total_files=0
+    # 验证文件大小
+    if file.size > settings.max_file_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"文件大小超过限制({settings.max_file_size / 1024 / 1024:.1f}MB)"
         )
 
-        # 使用超时机制进行数据库操作
-        try:
-            db.add(audit_task)
-            db.commit()
-            logger.info(f"✅ 审计任务创建成功: task_id={task_id}")
-        except Exception as db_error:
-            logger.error(f"❌ 数据库操作失败: {str(db_error)}")
-            raise HTTPException(
-                status_code=500,
-                detail="数据库操作失败"
-            )
+    try:
+        # 生成任务ID
+        task_id = str(uuid.uuid4())
+
+        # 创建任务目录
+        task_dir = Path(settings.upload_dir) / task_id
+        task_dir.mkdir(exist_ok=True)
 
         # 保存ZIP文件
-        logger.info("💾 保存ZIP文件...")
-        file_service = FileService()
+        zip_path = task_dir / file.filename
+        async with aiofiles.open(zip_path, 'wb') as f:
+            content = await file.read()
+            await f.write(content)
 
-        try:
-            # 添加文件读取超时
-            zip_path = await asyncio.wait_for(
-                file_service.save_uploaded_file(file, task_id),
-                timeout=30.0  # 30秒超时
-            )
-            logger.info(f"✅ ZIP文件保存成功: {zip_path}")
-        except asyncio.TimeoutError:
-            logger.error("❌ 文件保存超时")
-            raise HTTPException(
-                status_code=408,
-                detail="文件保存超时"
-            )
-        except Exception as save_error:
-            logger.error(f"❌ 文件保存失败: {str(save_error)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"文件保存失败: {str(save_error)}"
-            )
+        # 解压ZIP文件
+        extracted_files = []
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            extracted_dir = task_dir / "extracted"
+            extracted_dir.mkdir(parents=True, exist_ok=True)
 
-        # 解压并分析文件
-        logger.info("📦 解压并分析文件...")
+            for member in zip_ref.infolist():
+                decoded_name = _decode_zip_member_name(member.filename)
+                target_path = _safe_zip_target(extracted_dir, decoded_name)
 
-        try:
-            # 添加解压超时
-            extracted_files = await asyncio.wait_for(
-                file_service.extract_zip_file(zip_path, task_id),
-                timeout=60.0  # 60秒超时
-            )
-            logger.info(f"✅ 文件解压成功: 提取了{len(extracted_files)}个文件")
-        except asyncio.TimeoutError:
-            logger.error("❌ 文件解压超时")
-            raise HTTPException(
-                status_code=408,
-                detail="文件解压超时"
-            )
-        except Exception as extract_error:
-            logger.error(f"❌ 文件解压失败: {str(extract_error)}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"文件解压失败: {str(extract_error)}"
-            )
+                if member.is_dir():
+                    target_path.mkdir(parents=True, exist_ok=True)
+                    continue
 
-        # 统计文件数量
-        try:
-            audit_task.total_files = len(extracted_files)
-            db.commit()
-            logger.info(f"✅ 任务更新成功: total_files={len(extracted_files)}")
-        except Exception as update_error:
-            logger.error(f"❌ 任务更新失败: {str(update_error)}")
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                with zip_ref.open(member, "r") as source, open(target_path, "wb") as target:
+                    target.write(source.read())
 
-        logger.info(f"🎉 ZIP文件上传处理完成: task_id={task_id}")
+            # 分析解压的文件（跳过macOS隐藏文件和目录）
+            for file_path in sorted(extracted_dir.rglob("*")):
+                if file_path.is_file():
+                    # 跳过macOS资源分支文件和系统隐藏文件
+                    parts = file_path.parts
+                    if any(p.startswith("__MACOSX") for p in parts):
+                        continue
+                    if file_path.name.startswith("._"):
+                        continue
+                    file_info = await file_service.analyze_file(file_path)
+                    extracted_files.append(file_info)
+
+        file_summary = _build_file_summary(extracted_files)
+
+        # 创建审计任务
+        task = AuditTask(
+            id=task_id,
+            name=task_name or f"审计任务-{task_id[:8]}",
+            status="pending",
+            total_files=len(extracted_files),
+            file_path=str(zip_path)
+        )
+
+        db.add(task)
+        await db.commit()
+        await db.refresh(task)
 
         return {
-            "code": 200,
+            "task_id": task_id,
             "message": "文件上传成功",
-            "data": {
-                "task_id": task_id,
-                "file_name": file.filename,
-                "file_size": file.size,
-                "extracted_files": extracted_files,
-                "total_files": len(extracted_files)
+            "files": extracted_files,
+            "summary": file_summary,
+            "task": {
+                "id": task.id,
+                "name": task.name,
+                "status": task.status,
+                "total_files": task.total_files,
+                "summary": file_summary
             }
         }
 
-    except HTTPException:
-        # 重新抛出HTTP异常
-        raise
     except Exception as e:
-        logger.error(f"❌ 上传处理过程中发生未预期错误: {str(e)}", exc_info=True)
-        try:
-            db.rollback()
-            logger.info("✅ 数据库回滚完成")
-        except Exception as rollback_error:
-            logger.error(f"❌ 数据库回滚失败: {str(rollback_error)}")
+        await db.rollback()
+        import traceback
+        error_detail = f"文件处理失败: {str(e)}\n堆栈信息:\n{traceback.format_exc()}"
+        print(f"上传文件错误: {error_detail}")  # 临时添加调试信息
+        raise HTTPException(status_code=500, detail=error_detail)
 
-        raise HTTPException(
-            status_code=500,
-            detail=f"文件处理失败: {str(e)}"
-        )
 
-@router.post("/contract")
-async def upload_contract_file(
-    task_id: str,
+@router.post("/contract", summary="上传单个合同文件")
+async def upload_contract(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     上传单个合同文件
-    """
-    # 验证任务是否存在
-    task = db.query(AuditTask).filter(AuditTask.id == task_id).first()
-    if not task:
-        raise HTTPException(
-            status_code=404,
-            detail="审计任务不存在"
-        )
 
+    - **file**: 合同文件（PDF、JPG、PNG）
+    """
     # 验证文件类型
-    allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png']
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    if file_ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"不支持的文件类型，支持的格式: {', '.join(allowed_extensions)}"
-        )
+    if not file.filename.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
+        raise HTTPException(status_code=400, detail="合同文件只支持PDF、JPG、PNG格式")
 
     try:
-        file_service = FileService()
-        file_path = await file_service.save_uploaded_file(file, task_id, "contracts")
+        # 生成文件ID
+        file_id = str(uuid.uuid4())
+
+        # 保存文件
+        file_path = Path(settings.upload_dir) / "contracts" / f"{file_id}_{file.filename}"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        async with aiofiles.open(file_path, 'wb') as f:
+            content = await file.read()
+            await f.write(content)
+
+        # 分析文件
+        file_info = await file_service.analyze_file(file_path)
 
         return {
-            "code": 200,
+            "file_id": file_id,
             "message": "合同文件上传成功",
-            "data": {
-                "file_id": str(uuid.uuid4()),
-                "file_name": file.filename,
-                "file_path": file_path,
-                "file_size": file.size
-            }
+            "file_info": file_info
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"文件上传失败: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
 
-@router.post("/invoices")
-async def upload_invoice_files(
-    task_id: str,
+
+@router.post("/invoices", summary="批量上传发票文件")
+async def upload_invoices(
     files: List[UploadFile] = File(...),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     批量上传发票文件
-    """
-    # 验证任务是否存在
-    task = db.query(AuditTask).filter(AuditTask.id == task_id).first()
-    if not task:
-        raise HTTPException(
-            status_code=404,
-            detail="审计任务不存在"
-        )
 
-    # 验证文件数量
-    if len(files) > 50:  # 限制最多50个文件
-        raise HTTPException(
-            status_code=400,
-            detail="文件数量超过限制，最多支持50个文件"
-        )
+    - **files**: 发票文件列表（PDF、JPG、PNG）
+    """
+    if len(files) == 0:
+        raise HTTPException(status_code=400, detail="请至少上传一个文件")
+
+    if len(files) > 50:  # 限制单次上传数量
+        raise HTTPException(status_code=400, detail="单次最多上传50个文件")
 
     try:
-        file_service = FileService()
         uploaded_files = []
 
         for file in files:
             # 验证文件类型
-            allowed_extensions = ['.pdf', '.jpg', '.jpeg', '.png']
-            file_ext = os.path.splitext(file.filename)[1].lower()
-            if file_ext not in allowed_extensions:
-                continue  # 跳过不支持的文件
+            if not file.filename.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
+                continue  # 跳过不支持的文件类型
 
-            file_path = await file_service.save_uploaded_file(file, task_id, "invoices")
+            # 生成文件ID
+            file_id = str(uuid.uuid4())
+
+            # 保存文件
+            file_path = Path(settings.upload_dir) / "invoices" / f"{file_id}_{file.filename}"
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            async with aiofiles.open(file_path, 'wb') as f:
+                content = await file.read()
+                await f.write(content)
+
+            # 分析文件
+            file_info = await file_service.analyze_file(file_path)
             uploaded_files.append({
-                "file_id": str(uuid.uuid4()),
-                "file_name": file.filename,
-                "file_path": file_path,
-                "file_size": file.size
+                "file_id": file_id,
+                "file_info": file_info
             })
 
         return {
-            "code": 200,
             "message": f"成功上传{len(uploaded_files)}个发票文件",
-            "data": {
-                "task_id": task_id,
-                "uploaded_files": uploaded_files,
-                "total_count": len(uploaded_files)
-            }
+            "files": uploaded_files
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"文件上传失败: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
 
-@router.get("/files/{task_id}")
-async def get_task_files(
-    task_id: str,
-    db: Session = Depends(get_db)
-):
+
+@router.get("/file/{file_id}/info", summary="获取文件信息")
+async def get_file_info(file_id: str):
     """
-    获取任务下的所有文件列表
+    获取已上传文件的信息
+
+    - **file_id**: 文件ID
     """
-    # 验证任务是否存在
-    task = db.query(AuditTask).filter(AuditTask.id == task_id).first()
-    if not task:
-        raise HTTPException(
-            status_code=404,
-            detail="审计任务不存在"
-        )
+    try:
+        # 查找文件
+        for root_dir in [settings.upload_dir, "uploads"]:
+            for file_path in Path(root_dir).rglob(f"*{file_id}*"):
+                if file_path.is_file():
+                    file_info = await file_service.analyze_file(file_path)
+                    return {
+                        "file_id": file_id,
+                        "file_info": file_info,
+                        "file_path": str(file_path)
+                    }
 
-    file_service = FileService()
-    files = file_service.get_task_files(task_id)
+        raise HTTPException(status_code=404, detail="文件未找到")
 
-    return {
-        "code": 200,
-        "message": "获取文件列表成功",
-        "data": {
-            "task_id": task_id,
-            "files": files,
-            "total_count": len(files)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取文件信息失败: {str(e)}")
+
+
+@router.delete("/file/{file_id}", summary="删除文件")
+async def delete_file(file_id: str):
+    """
+    删除已上传的文件
+
+    - **file_id**: 文件ID
+    """
+    try:
+        # 查找并删除文件
+        deleted_files = []
+        for root_dir in [settings.upload_dir, "uploads"]:
+            for file_path in Path(root_dir).rglob(f"*{file_id}*"):
+                if file_path.is_file():
+                    file_path.unlink()
+                    deleted_files.append(str(file_path))
+
+        if not deleted_files:
+            raise HTTPException(status_code=404, detail="文件未找到")
+
+        return {
+            "message": "文件删除成功",
+            "deleted_files": deleted_files
         }
-    }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"删除文件失败: {str(e)}")

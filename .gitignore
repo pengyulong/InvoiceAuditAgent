@@ -131,6 +131,7 @@ celerybeat.pid
 dump.rdb
 
 # Project specific files
+release/
 ERROR_REPORT.md
 audit_start_result.json
 audit.db

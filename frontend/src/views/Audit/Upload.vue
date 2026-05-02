@@ -1,300 +1,480 @@
 <template>
-  <div class="upload-container">
-    <div class="upload-header">
-      <h2>文件上传</h2>
-      <p>请上传包含合同和发票的ZIP文件，系统将自动进行分析</p>
+  <div class="upload-page">
+    <!-- 页面标题 -->
+    <div class="page-header">
+      <el-breadcrumb separator="/">
+        <el-breadcrumb-item :to="{ path: '/' }">首页</el-breadcrumb-item>
+        <el-breadcrumb-item>审计管理</el-breadcrumb-item>
+        <el-breadcrumb-item>文件上传</el-breadcrumb-item>
+      </el-breadcrumb>
+
+      <div class="header-content">
+        <h1 class="page-title">文件上传</h1>
+        <p class="page-description">上传包含合同和发票的ZIP文件开始审计</p>
+      </div>
     </div>
 
-    <div class="upload-content">
-      <!-- ZIP文件上传区域 -->
-      <div class="upload-section">
-        <el-card class="upload-card">
-          <template #header>
-            <div class="card-header">
-              <el-icon><Document /></el-icon>
-              <span>上传审计文件</span>
-            </div>
-          </template>
-
-          <el-upload
-            ref="uploadRef"
-            class="zip-uploader"
-            drag
-            :auto-upload="false"
-            :show-file-list="false"
-            accept=".zip"
-            :on-change="handleFileChange"
-            :before-upload="beforeUpload"
-            :autofocus="false"
-            :focus="false"
-          >
-            <div class="upload-area">
-              <el-icon class="upload-icon"><UploadFilled /></el-icon>
-              <div class="upload-text">
-                <p>将ZIP文件拖拽到此处，或<em>点击上传</em></p>
-                <p class="upload-tip">支持格式：ZIP（包含1份合同和多份发票），大小不超过50MB</p>
+    <!-- 主要内容区域 -->
+    <div class="main-content">
+      <el-row :gutter="24">
+        <!-- 左侧：文件上传区域 -->
+        <el-col :lg="16" :md="24" :sm="24">
+          <el-card class="upload-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span class="header-icon">📤</span>
+                <span class="header-title">文件上传</span>
               </div>
-            </div>
-          </el-upload>
+            </template>
 
-          <!-- 已选择的文件 -->
-          <div v-if="selectedFile" class="selected-file">
-            <div class="file-info">
-              <el-icon><Document /></el-icon>
-              <span class="file-name">{{ selectedFile.name }}</span>
-              <span class="file-size">{{ formatFileSize(selectedFile.size) }}</span>
-              <el-button type="text" @click="removeFile">
-                <el-icon><Close /></el-icon>
-              </el-button>
-            </div>
-          </div>
-
-          <!-- 上传进度 -->
-          <div v-if="uploading" class="upload-progress">
-            <el-progress :percentage="uploadProgress" :status="uploadStatus" />
-            <p class="progress-text">{{ progressText }}</p>
-          </div>
-
-          <!-- 操作按钮 -->
-          <div class="upload-actions">
-            <el-button
-              type="primary"
-              size="large"
-              :disabled="!selectedFile || uploading"
-              :loading="uploading"
-              @click="handleUpload"
+            <!-- 拖拽上传区域 -->
+            <el-upload
+              ref="uploadRef"
+              :auto-upload="false"
+              :show-file-list="false"
+              accept=".zip"
+              :on-change="handleFileChange"
+              :before-upload="beforeUpload"
+              drag
+              class="upload-component"
             >
-              <el-icon><Upload /></el-icon>
-              {{ uploading ? '上传中...' : '开始上传' }}
-            </el-button>
-            <el-button size="large" @click="resetUpload">
-              <el-icon><RefreshLeft /></el-icon>
-              重新选择
-            </el-button>
-          </div>
-        </el-card>
-      </div>
+                <div class="upload-content">
+                  <!-- 未上传状态 -->
+                  <div v-if="!uploadedFile" class="upload-placeholder">
+                    <span class="upload-icon">☁️</span>
+                    <h3 class="upload-title">拖拽ZIP文件到此处</h3>
+                    <p class="upload-subtitle">或者点击选择文件</p>
+                    <p class="upload-hint">
+                      支持格式：ZIP（包含1份合同和多份发票）<br>
+                      最大文件大小：50MB
+                    </p>
+                  </div>
 
-      <!-- 上传说明 -->
-      <div class="instructions-section">
-        <el-card class="instructions-card">
-          <template #header>
-            <div class="card-header">
-              <el-icon><InfoFilled /></el-icon>
-              <span>上传说明</span>
-            </div>
-          </template>
+                  <!-- 上传中状态 -->
+                  <div v-else-if="uploadStatus === 'uploading'" class="upload-progress">
+                    <span class="upload-icon rotating">⏳</span>
+                    <h3 class="upload-title">正在上传...</h3>
+                    <p class="upload-subtitle">{{ uploadedFile.name }}</p>
+                    <el-progress
+                      :percentage="uploadProgress"
+                      :stroke-width="8"
+                      class="progress-bar"
+                    />
+                    <p class="upload-hint">{{ uploadProgress }}% 完成</p>
+                  </div>
 
-          <div class="instructions-content">
-            <div class="instruction-item">
-              <div class="instruction-number">1</div>
-              <div class="instruction-text">
-                <h4>准备文件</h4>
-                <p>将1份合同文件和多份发票文件打包成ZIP格式</p>
-              </div>
-            </div>
-            <div class="instruction-item">
-              <div class="instruction-number">2</div>
-              <div class="instruction-text">
-                <h4>文件命名</h4>
-                <p>建议使用包含"合同"、"发票"等关键词的文件名，便于系统识别</p>
-              </div>
-            </div>
-            <div class="instruction-item">
-              <div class="instruction-number">3</div>
-              <div class="instruction-text">
-                <h4>支持格式</h4>
-                <p>合同和发票支持PDF、JPG、JPEG、PNG格式</p>
-              </div>
-            </div>
-            <div class="instruction-item">
-              <div class="instruction-number">4</div>
-              <div class="instruction-text">
-                <h4>文件质量</h4>
-                <p>确保文件清晰可读，避免模糊、倾斜或有遮挡的情况</p>
-              </div>
-            </div>
-          </div>
-        </el-card>
-      </div>
-    </div>
+                  <!-- 上传成功状态 -->
+                  <div v-else-if="uploadStatus === 'success'" class="upload-success">
+                    <span class="upload-icon success">✅</span>
+                    <h3 class="upload-title">上传成功</h3>
+                    <p class="upload-subtitle">{{ uploadedFile.name }}</p>
+                    <p class="upload-hint">文件大小：{{ formatFileSize(uploadedFile.size) }}</p>
+                  </div>
 
-    <!-- 上传结果对话框 -->
-    <el-dialog
-      v-model="showResultDialog"
-      title="上传完成"
-      width="500px"
-      :close-on-click-modal="false"
-    >
-      <div v-if="uploadResult" class="result-content">
-        <el-result
-          :icon="uploadResult.success ? 'success' : 'error'"
-          :title="uploadResult.success ? '文件上传成功' : '文件上传失败'"
-          :sub-title="uploadResult.message"
-        >
-          <template #extra v-if="uploadResult.success">
-            <div class="result-details">
-              <p><strong>任务ID：</strong>{{ uploadResult.task_id }}</p>
-              <p><strong>文件名：</strong>{{ uploadResult.file_name }}</p>
-              <p><strong>文件数量：</strong>{{ uploadResult.total_files }} 个文件</p>
+                  <!-- 上传失败状态 -->
+                  <div v-else-if="uploadStatus === 'error'" class="upload-error">
+                    <span class="upload-icon error">❌</span>
+                    <h3 class="upload-title">上传失败</h3>
+                    <p class="upload-subtitle">{{ errorMessage }}</p>
+                    <el-button type="primary" @click="retryUpload">重新上传</el-button>
+                  </div>
+                </div>
+            </el-upload>
+
+            <!-- 文件预览区域 -->
+            <div v-if="uploadedFile && uploadStatus === 'success'" class="file-preview">
+              <div class="preview-header">
+                <h4>文件预览</h4>
+                <el-button
+                  type="danger"
+                  circle
+                  @click="removeFile"
+                >
+                  🗑️
+                </el-button>
+              </div>
+
+              <div class="preview-content">
+                <div class="file-info">
+                  <span class="file-icon">📄</span>
+                  <div class="file-details">
+                    <p class="file-name">{{ uploadedFile.name }}</p>
+                    <p class="file-meta">
+                      大小：{{ formatFileSize(uploadedFile.size) }} |
+                      类型：{{ getFileType(uploadedFile.name) }}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- 解压文件列表 -->
+                <div v-if="extractedFiles.length > 0" class="extracted-files">
+                  <h5>解压文件列表：</h5>
+                  <div class="file-list">
+                    <div
+                      v-for="file in extractedFiles"
+                      :key="file.id"
+                      class="file-item"
+                      :class="{ 'is-contract': file.category === 'contract' }"
+                    >
+                      <span class="item-icon">
+                        {{ file.category === 'contract' ? '📋' : '🧾' }}
+                      </span>
+                      <span class="item-name">{{ file.name }}</span>
+                      <el-tag
+                        :type="getFileTypeTag(file.category)"
+                        size="small"
+                      >
+                        {{ getCategoryLabel(file.category) }}
+                      </el-tag>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="result-actions">
-              <el-button type="primary" @click="startAudit">
+
+            <!-- 操作按钮 -->
+            <div class="action-buttons">
+              <el-button
+                type="primary"
+                size="large"
+                :disabled="!canStartAudit"
+                :loading="isStartingAudit"
+                @click="startAudit"
+              >
+                ▶️
                 开始审计
               </el-button>
-              <el-button @click="showResultDialog = false">
-                关闭
+              <el-button
+                size="large"
+                @click="clearAll"
+                :disabled="isStartingAudit"
+              >
+                🔄
+                清除所有
               </el-button>
             </div>
-          </template>
-          <template #extra v-else>
-            <el-button @click="showResultDialog = false">
-              关闭
-            </el-button>
-          </template>
-        </el-result>
-      </div>
-    </el-dialog>
+          </el-card>
+        </el-col>
+
+        <!-- 右侧：说明面板 -->
+        <el-col :lg="8" :md="24" :sm="24">
+          <el-card class="instruction-card" shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span class="header-icon">ℹ️</span>
+                <span class="header-title">上传说明</span>
+              </div>
+            </template>
+
+            <div class="instruction-content">
+              <div class="instruction-section">
+                <h4>
+                  📄
+                  支持格式
+                </h4>
+                <ul>
+                  <li>ZIP压缩包</li>
+                  <li>内含PDF、JPG、PNG格式的合同和发票文件</li>
+                </ul>
+              </div>
+
+              <div class="instruction-section">
+                <h4>
+                  📁
+                  文件限制
+                </h4>
+                <ul>
+                  <li>ZIP文件大小：≤ 50MB</li>
+                  <li>合同文件：1份</li>
+                  <li>发票文件：多份</li>
+                </ul>
+              </div>
+
+              <div class="instruction-section">
+                <h4>
+                  ✏️
+                  命名规范
+                </h4>
+                <p>建议使用清晰的文件名，便于识别</p>
+                <ul>
+                  <li>合同：合同_采购方_供应商.pdf</li>
+                  <li>发票：发票_001_日期.pdf</li>
+                </ul>
+              </div>
+
+              <div class="instruction-section">
+                <h4>
+                  ⬇️
+                  示例文件
+                </h4>
+                <el-button
+                  type="primary"
+                  plain
+                  size="small"
+                  @click="downloadSample"
+                >
+                  下载示例
+                </el-button>
+                <p class="sample-hint">下载标准的示例文件进行测试</p>
+              </div>
+
+              <div class="instruction-section">
+                <h4>
+                  ⚠️
+                  注意事项
+                </h4>
+                <ul>
+                  <li>确保文件清晰可读</li>
+                  <li>避免文件损坏或密码保护</li>
+                  <li>检查文件完整性</li>
+                </ul>
+              </div>
+            </div>
+          </el-card>
+
+          <!-- 上传历史 -->
+          <el-card class="history-card" shadow="hover" v-if="uploadHistory.length > 0">
+            <template #header>
+              <div class="card-header">
+                <span class="header-icon">🕐</span>
+                <span class="header-title">上传历史</span>
+              </div>
+            </template>
+
+            <div class="history-content">
+              <div
+                v-for="item in uploadHistory.slice(0, 5)"
+                :key="item.id"
+                class="history-item"
+              >
+                <div class="history-info">
+                  <p class="history-name">{{ item.name }}</p>
+                  <p class="history-time">{{ formatTime(item.createdAt) }}</p>
+                </div>
+                <el-tag :type="getStatusType(item.status)" size="small">
+                  {{ getStatusLabel(item.status) }}
+                </el-tag>
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { UploadFile } from 'element-plus'
-import { uploadZipFile } from '@/services/audit'
-import { useAuditStore } from '@/stores/audit'
+// import {
+//   Upload,
+//   CloudUpload,
+//   Loading,
+//   Check,
+//   Close,
+//   Delete,
+//   Play,
+//   Refresh,
+//   Document,
+//   Invoice,
+//   InfoFilled,
+//   FolderOpened,
+//   Edit,
+//   Download,
+//   Warning,
+//   Clock
+// } from '@element-plus/icons-vue'
+import { useAuditStore, type FileInfo } from '@/stores/audit'
+import { apiService } from '@/services/api'
 
 const router = useRouter()
 const auditStore = useAuditStore()
 
 // 响应式数据
 const uploadRef = ref()
-const selectedFile = ref<File | null>(null)
-const uploading = ref(false)
+const uploadedFile = ref<File | null>(null)
+const uploadStatus = ref<'idle' | 'uploading' | 'success' | 'error'>('idle')
 const uploadProgress = ref(0)
-const uploadStatus = ref<'success' | 'exception' | ''>('')
-const progressText = ref('')
-const showResultDialog = ref(false)
+const errorMessage = ref('')
+const extractedFiles = ref<FileInfo[]>([])
+const isStartingAudit = ref(false)
+const uploadHistory = ref<any[]>([])
 
-const uploadResult = reactive<{
-  success: boolean
-  task_id?: string
-  file_name?: string
-  total_files?: number
-  message?: string
-}>({
-  success: false
+// 计算属性
+const contractCount = computed(() => extractedFiles.value.filter(file => file.category === 'contract').length)
+const invoiceCount = computed(() => extractedFiles.value.filter(file => file.category === 'invoice').length)
+const hasWarnings = computed(() => {
+  const warnings: string[] = []
+  if (contractCount.value !== 1) warnings.push(`识别到${contractCount.value}份合同，建议上传前确认ZIP中仅包含1份合同`)
+  if (invoiceCount.value < 1) warnings.push('未识别到发票文件')
+  return warnings.length > 0
+})
+const canStartAudit = computed(() => {
+  const totalFiles = contractCount.value + invoiceCount.value
+  return uploadedFile.value && uploadStatus.value === 'success' && totalFiles >= 2
 })
 
-// 方法
-const handleFileChange = (file: UploadFile) => {
-  if (file.raw) {
-    selectedFile.value = file.raw
+const handleFileChange = (file: any) => {
+  if (validateFile(file.raw)) {
+    uploadedFile.value = file.raw
+    startUpload()
   }
 }
 
 const beforeUpload = (file: File) => {
+  if (!validateFile(file)) {
+    return false
+  }
+  return false // 阻止自动上传
+}
+
+const validateFile = (file: File): boolean => {
   // 检查文件类型
   if (!file.name.toLowerCase().endsWith('.zip')) {
-    ElMessage.error('只支持ZIP格式文件')
+    ElMessage.error('只支持ZIP文件格式')
     return false
   }
 
-  // 检查文件大小（50MB）
-  const maxSize = 50 * 1024 * 1024
+  // 检查文件大小
+  const maxSize = 50 * 1024 * 1024 // 50MB
   if (file.size > maxSize) {
     ElMessage.error('文件大小不能超过50MB')
     return false
   }
 
-  return false // 阻止自动上传
+  return true
 }
 
-const handleUpload = async () => {
-  if (!selectedFile.value) {
-    ElMessage.warning('请先选择文件')
-    return
-  }
+const startUpload = async () => {
+  if (!uploadedFile.value) return
 
-  uploading.value = true
+  uploadStatus.value = 'uploading'
   uploadProgress.value = 0
-  uploadStatus.value = ''
-  progressText.value = '正在上传文件...'
+  errorMessage.value = ''
 
   try {
-    const response = await uploadZipFile(selectedFile.value, (percent) => {
-      uploadProgress.value = percent
-      progressText.value = `正在上传文件... ${percent}%`
+    const formData = new FormData()
+    formData.append('file', uploadedFile.value)
+    formData.append('task_name', `审计任务-${new Date().getTime()}`)
+
+    const result = await apiService.upload('/upload/zip', formData, (progress) => {
+      uploadProgress.value = progress
     })
 
-    if (response.code === 200) {
-      uploadProgress.value = 100
-      uploadStatus.value = 'success'
-      progressText.value = '上传完成'
+    uploadStatus.value = 'success'
+    extractedFiles.value = result.files || []
 
-      // 设置上传结果
-      uploadResult.success = true
-      uploadResult.task_id = response.data.task_id
-      uploadResult.file_name = response.data.file_name
-      uploadResult.total_files = response.data.total_files
-      uploadResult.message = '文件已成功上传，可以开始审计'
+    // 添加到上传历史
+    uploadHistory.value.unshift({
+      id: result.task_id,
+      name: uploadedFile.value?.name,
+      size: uploadedFile.value?.size || 0,
+      status: 'uploaded',
+      createdAt: new Date()
+    })
 
-      // 更新store中的任务信息
-      auditStore.setCurrentTask({
-        id: response.data.task_id,
-        task_name: response.data.file_name,
-        status: 'pending',
-        progress_percentage: 0,
-        current_step: '文件上传完成',
-        total_files: response.data.total_files,
-        processed_files: 0,
-        created_at: new Date().toISOString()
-      })
-
+    const warnings = result.summary?.warnings || result.task?.summary?.warnings || []
+    if (warnings.length > 0) {
+      ElMessage.warning(warnings.join('；'))
+    } else {
       ElMessage.success('文件上传成功')
-      showResultDialog.value = true
     }
   } catch (error: any) {
-    uploadStatus.value = 'exception'
-    progressText.value = '上传失败'
-
-    uploadResult.success = false
-    uploadResult.message = error.message || '文件上传失败'
-
+    uploadStatus.value = 'error'
+    errorMessage.value = error.message || '上传失败'
     ElMessage.error('文件上传失败')
-  } finally {
-    uploading.value = false
   }
 }
 
 const removeFile = () => {
-  selectedFile.value = null
+  uploadedFile.value = null
+  uploadStatus.value = 'idle'
   uploadProgress.value = 0
-  uploadStatus.value = ''
-  progressText.value = ''
+  errorMessage.value = ''
+  extractedFiles.value = []
 }
 
-const resetUpload = () => {
-  selectedFile.value = null
-  uploadProgress.value = 0
-  uploadStatus.value = ''
-  progressText.value = ''
-  uploading.value = false
+const clearAll = () => {
+  removeFile()
+  uploadHistory.value = []
+}
 
-  if (uploadRef.value) {
-    uploadRef.value.clearFiles()
+const retryUpload = () => {
+  if (uploadedFile.value) {
+    startUpload()
   }
 }
 
-const startAudit = () => {
-  showResultDialog.value = false
-  if (uploadResult.task_id) {
-    router.push(`/audit/processing/${uploadResult.task_id}`)
+const startAudit = async () => {
+  if (!canStartAudit.value) return
+
+  // 如果有分类警告，弹窗确认
+  if (hasWarnings.value) {
+    try {
+      await ElMessageBox.confirm(
+        `文件分类结果：${contractCount.value}份合同、${invoiceCount.value}份发票。系统将在审计过程中通过内容识别进一步确认文件类型，是否继续？`,
+        '文件分类提示',
+        {
+          confirmButtonText: '继续审计',
+          cancelButtonText: '取消',
+          type: 'warning',
+          distinguishCancelAndClose: true,
+        }
+      )
+    } catch {
+      // 用户取消
+      return
+    }
+  }
+
+  try {
+    isStartingAudit.value = true
+
+    // 获取当前上传任务的任务ID
+    const taskId = uploadHistory.value[0]?.id
+    if (!taskId) {
+      throw new Error('未找到有效的任务ID，请重新上传文件')
+    }
+
+    // 创建审计任务
+    const task = auditStore.createTask(
+      `审计任务-${taskId}`,
+      extractedFiles.value
+    )
+
+    // 开始审计
+    await apiService.post('/audit/start', {
+      task_id: taskId,
+      audit_config: {
+        enable_duplicate_detection: true,
+        enable_amount_validation: true,
+        enable_content_matching: true,
+        confidence_threshold: 0.8
+      }
+    })
+
+    // 跳转到进度页面
+    router.push(`/audit/processing/${taskId}`)
+
+  } catch (error: any) {
+    ElMessage.error('启动审计失败: ' + (error.message || '未知错误'))
+  } finally {
+    isStartingAudit.value = false
   }
 }
 
+const downloadSample = () => {
+  apiService.download('/upload/sample', 'sample_contract_invoice_audit.zip')
+    .then(() => {
+      ElMessage.success('示例文件下载成功')
+    })
+    .catch((error: any) => {
+      ElMessage.error('示例文件下载失败: ' + (error.message || '未知错误'))
+    })
+}
+
+// 工具函数
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -303,213 +483,381 @@ const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
-// 组件挂载时处理焦点问题
-onMounted(() => {
-  // 确保upload组件不会自动获得焦点
-  if (uploadRef.value) {
-    const uploadElement = uploadRef.value.$el
-    if (uploadElement) {
-      uploadElement.blur()
-      // 移除焦点事件监听器，防止无限循环
-      uploadElement.addEventListener('focus', (e) => {
-        e.preventDefault()
-        e.target.blur()
-      }, { capture: true, passive: false })
-    }
+const getFileType = (filename: string): string => {
+  const ext = filename.toLowerCase().split('.').pop()
+  const typeMap: Record<string, string> = {
+    'pdf': 'PDF文档',
+    'jpg': 'JPEG图片',
+    'jpeg': 'JPEG图片',
+    'png': 'PNG图片',
+    'zip': 'ZIP压缩包'
   }
-})
+  return ext ? typeMap[ext] || '未知文件' : '未知文件'
+}
+
+
+const getFileTypeTag = (category: string) => {
+  return category === 'contract' ? 'primary' : 'success'
+}
+
+const getCategoryLabel = (category: string) => {
+  return category === 'contract' ? '合同' : '发票'
+}
+
+const getStatusType = (status: string) => {
+  const typeMap: Record<string, string> = {
+    'uploaded': 'success',
+    'processing': 'warning',
+    'completed': 'info',
+    'failed': 'danger'
+  }
+  return typeMap[status] || 'info'
+}
+
+const getStatusLabel = (status: string) => {
+  const labelMap: Record<string, string> = {
+    'uploaded': '已上传',
+    'processing': '处理中',
+    'completed': '已完成',
+    'failed': '失败'
+  }
+  return labelMap[status] || status
+}
+
+const formatTime = (date: Date): string => {
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const minutes = Math.floor(diff / 60000)
+
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}小时前`
+
+  const days = Math.floor(hours / 24)
+  return `${days}天前`
+}
 </script>
 
 <style scoped>
-.upload-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
+.upload-page {
+  padding: 24px;
 }
 
-.upload-header {
-  text-align: center;
-  margin-bottom: 3rem;
+.page-header {
+  margin-bottom: 24px;
 }
 
-.upload-header h2 {
-  font-size: 2.5rem;
+.header-content {
+  margin-top: 16px;
+}
+
+.page-title {
+  font-size: 28px;
   font-weight: 600;
-  color: #1f2937;
-  margin-bottom: 1rem;
+  color: #303133;
+  margin-bottom: 8px;
 }
 
-.upload-header p {
-  color: #6b7280;
-  font-size: 1.1rem;
+.page-description {
+  font-size: 16px;
+  color: #606266;
+  margin: 0;
 }
 
-.upload-content {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 2rem;
+.main-content {
+  margin-top: 24px;
+}
+
+.upload-card {
+  margin-bottom: 24px;
 }
 
 .card-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
+}
+
+.header-icon {
+  font-size: 18px;
+  color: #409EFF;
+}
+
+.header-title {
+  font-size: 16px;
   font-weight: 600;
+  color: #303133;
 }
 
-.upload-card {
-  height: fit-content;
+.upload-component {
+  margin-bottom: 24px;
 }
 
-.zip-uploader {
-  width: 100%;
+.upload-component :deep(.el-upload-dragger) {
+  border: 2px dashed #DCDFE6;
+  border-radius: 8px;
+  padding: 48px 24px;
+  background-color: transparent;
+  transition: all 0.3s ease;
 }
 
-.upload-area {
-  text-align: center;
-  padding: 3rem 2rem;
+.upload-component :deep(.el-upload-dragger:hover) {
+  border-color: #409EFF;
+  background-color: #F5F7FA;
+}
+
+.upload-component :deep(.el-upload-dragger.is-dragover) {
+  border-color: #409EFF;
+  background-color: #ECF5FF;
+  transform: scale(1.02);
 }
 
 .upload-icon {
-  font-size: 4rem;
-  color: #6366f1;
-  margin-bottom: 1rem;
+  font-size: 48px;
+  color: #C0C4CC;
+  margin-bottom: 16px;
 }
 
-.upload-text p {
-  margin: 0.5rem 0;
+.upload-icon.success {
+  color: #67C23A;
 }
 
-.upload-text em {
-  color: #6366f1;
-  font-style: normal;
+.upload-icon.error {
+  color: #F56C6C;
+}
+
+.upload-icon.rotating {
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.upload-title {
+  font-size: 18px;
   font-weight: 600;
+  color: #303133;
+  margin-bottom: 8px;
 }
 
-.upload-tip {
-  color: #6b7280;
-  font-size: 0.9rem;
+.upload-subtitle {
+  font-size: 14px;
+  color: #606266;
+  margin-bottom: 16px;
 }
 
-.selected-file {
-  margin-top: 1.5rem;
-  padding: 1rem;
-  background: #f8fafc;
-  border-radius: 0.5rem;
-  border: 1px solid #e2e8f0;
+.upload-hint {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.progress-bar {
+  margin: 16px 0;
+}
+
+.file-preview {
+  border-top: 1px solid #EBEEF5;
+  padding-top: 24px;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.preview-header h4 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.preview-content {
+  margin-bottom: 24px;
 }
 
 .file-info {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: 12px;
+  padding: 16px;
+  background-color: #F5F7FA;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.file-icon {
+  font-size: 24px;
+  color: #409EFF;
 }
 
 .file-name {
-  flex: 1;
-  font-weight: 500;
-  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
 }
 
-.file-size {
-  color: #6b7280;
-  font-size: 0.9rem;
+.file-meta {
+  font-size: 12px;
+  color: #909399;
+  margin: 0;
 }
 
-.upload-progress {
-  margin-top: 1.5rem;
+.extracted-files {
+  margin-top: 16px;
 }
 
-.progress-text {
-  text-align: center;
-  margin-top: 0.5rem;
-  color: #6b7280;
-  font-size: 0.9rem;
+.extracted-files h5 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 12px;
 }
 
-.upload-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  margin-top: 2rem;
-}
-
-.instructions-card {
-  height: fit-content;
-}
-
-.instructions-content {
+.file-list {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 8px;
 }
 
-.instruction-item {
-  display: flex;
-  gap: 1rem;
-  align-items: flex-start;
-}
-
-.instruction-number {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #6366f1;
-  color: white;
+.file-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  flex-shrink: 0;
+  gap: 8px;
+  padding: 8px 12px;
+  background-color: #FAFAFA;
+  border-radius: 6px;
+  border-left: 3px solid #E4E7ED;
+  transition: all 0.2s ease;
 }
 
-.instruction-text h4 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #1f2937;
+.file-item:hover {
+  background-color: #F5F7FA;
 }
 
-.instruction-text p {
-  margin: 0;
-  color: #6b7280;
-  font-size: 0.9rem;
-  line-height: 1.4;
+.file-item.is-contract {
+  border-left-color: #409EFF;
 }
 
-.result-content {
-  padding: 1rem 0;
+.item-icon {
+  font-size: 16px;
+  color: #909399;
 }
 
-.result-details {
-  background: #f8fafc;
-  padding: 1rem;
-  border-radius: 0.5rem;
-  margin: 1rem 0;
+.item-name {
+  flex: 1;
+  font-size: 13px;
+  color: #303133;
 }
 
-.result-details p {
-  margin: 0.5rem 0;
-  color: #374151;
-}
-
-.result-actions {
+.action-buttons {
   display: flex;
-  gap: 1rem;
+  gap: 16px;
   justify-content: center;
-  margin-top: 1.5rem;
+}
+
+.instruction-card,
+.history-card {
+  margin-bottom: 24px;
+}
+
+.instruction-content {
+  margin-top: 16px;
+}
+
+.instruction-section {
+  margin-bottom: 24px;
+}
+
+.instruction-section:last-child {
+  margin-bottom: 0;
+}
+
+.instruction-section h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 12px;
+}
+
+.instruction-section p {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.instruction-section ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.instruction-section li {
+  font-size: 13px;
+  color: #606266;
+  margin-bottom: 4px;
+}
+
+.sample-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 8px;
+}
+
+.history-content {
+  margin-top: 16px;
+}
+
+.history-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #F0F0F0;
+}
+
+.history-item:last-child {
+  border-bottom: none;
+}
+
+.history-name {
+  font-size: 13px;
+  color: #303133;
+  margin-bottom: 2px;
+}
+
+.history-time {
+  font-size: 12px;
+  color: #909399;
+  margin: 0;
 }
 
 @media (max-width: 768px) {
-  .upload-content {
-    grid-template-columns: 1fr;
+  .upload-page {
+    padding: 16px;
   }
 
-  .upload-header h2 {
-    font-size: 2rem;
+  .page-title {
+    font-size: 24px;
   }
 
-  .upload-actions {
+  .upload-zone {
+    padding: 32px 16px;
+  }
+
+  .action-buttons {
     flex-direction: column;
   }
 }

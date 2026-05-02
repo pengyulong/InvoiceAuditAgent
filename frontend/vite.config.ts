@@ -28,31 +28,24 @@ export default defineConfig({
       '@': resolve(__dirname, 'src')
     }
   },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler'
+      }
+    }
+  },
   server: {
-    port: 3001,
-    open: true,
+    port: 3000,
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
-        changeOrigin: true,
-        secure: false
-      },
-      '/ws': {
-        target: 'ws://localhost:8000',
-        ws: true,
         changeOrigin: true
       }
     }
   },
   build: {
     outDir: 'dist',
-    sourcemap: false,
-    rollupOptions: {
-      output: {
-        chunkFileNames: 'js/[name]-[hash].js',
-        entryFileNames: 'js/[name]-[hash].js',
-        assetFileNames: '[ext]/[name]-[hash].[ext]'
-      }
-    }
+    sourcemap: true
   }
 })

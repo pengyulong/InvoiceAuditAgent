@@ -8,11 +8,9 @@
 ### 1.2 技术栈选择
 - **前端**: Vue 3 + TypeScript + Element Plus
 - **后端**: Python 3.9+ + FastAPI + LangGraph
-- **AI模型**: 阿里云qwen3-vl-8b-thinking + DeepSeek-V3.2-exp
+- **AI模型**: 阿里云qwen3-vl-plus + DeepSeek-V3.2-exp
 - **数据库**: SQLite (开发) / PostgreSQL (生产)
 - **缓存**: Redis
-- **任务队列**: Celery
-- **文件存储**: 本地存储 + MinIO
 
 ## 2. 系统架构设计
 
@@ -28,7 +26,7 @@ Agent编排层 (LangGraph)
     ↓
 模型服务层 (AI API)
     ↓
-数据存储层 (SQLite/PostgreSQL + Redis)
+数据存储层 (SQLite + Redis)
 ```
 
 ### 2.2 核心模块设计
@@ -93,7 +91,7 @@ backend/
 
 # 2. 合同分析Agent (Contract Analyzer)
 - 使用多模态模型解析合同图像
-- 提取关键信息：合同编号、金额、商品清单
+- 提取关键信息：合同编号、金额、商品清单、收/付款方单位名称
 - 合同合理性评估
 - 输出结构化数据
 
@@ -108,7 +106,12 @@ backend/
 - 金额一致性验证
 - 覆盖率计算
 - 差异项识别
-```
+
+# 5. 报告生成Agent(report)
+- 合同内容总结
+- 发票信息汇总
+- 差异项汇总
+- 审计报告生成
 
 ### 3.2 工作流程图
 ```

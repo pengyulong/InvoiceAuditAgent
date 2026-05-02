@@ -1,161 +1,314 @@
-"""
-结果API路由
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional, List
+import os
 
 from app.core.database import get_db
-from app.models.audit import AuditTask, AuditStatus
-from app.schemas.results import (
-    TaskStatisticsResponse,
-    TaskListResponse,
-    TaskSummary
-)
+from app.services.result_service import ResultService
+from app.core.config import settings
 
 router = APIRouter()
+result_service = ResultService()
 
 
-@router.get("/statistics", response_model=TaskStatisticsResponse)
-async def get_task_statistics(db: Session = Depends(get_db)):
-    """获取任务统计信息"""
-    try:
-        # 统计任务数量
-        total_tasks = db.query(AuditTask).count()
-        completed_tasks = db.query(AuditTask).filter(
-            AuditTask.status == AuditStatus.COMPLETED
-        ).count()
-        failed_tasks = db.query(AuditTask).filter(
-            AuditTask.status == AuditStatus.FAILED
-        ).count()
-        processing_tasks = db.query(AuditTask).filter(
-            AuditTask.status == AuditStatus.PROCESSING
-        ).count()
-
-        # 统计合同和发票数量
-        from app.models.contract import Contract
-        from app.models.invoice import Invoice
-
-        total_contracts = db.query(Contract).count()
-        total_invoices = db.query(Invoice).count()
-
-        success_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
-
-        return TaskStatisticsResponse(
-            total_tasks=total_tasks,
-            completed_tasks=completed_tasks,
-            failed_tasks=failed_tasks,
-            processing_tasks=processing_tasks,
-            total_contracts=total_contracts,
-            total_invoices=total_invoices,
-            success_rate=round(success_rate, 2)
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/tasks", response_model=TaskListResponse)
-async def get_tasks(
-    page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
-    status: Optional[str] = Query(None),
-    db: Session = Depends(get_db)
+@router.get("/{audit_id}", summary="获取审计结果详情")
+async def get_result_details(
+    audit_id: str,
+    db: AsyncSession = Depends(get_db)
 ):
-    """获取任务列表"""
+    """
+    获取指定审计任务的详细结果
+
+    - **audit_id**: 审计ID
+    """
     try:
-        query = db.query(AuditTask)
+        result = await result_service.get_result_details(audit_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="审计结果不存在")
+        return result
 
-        # 状态筛选
-        if status:
-            try:
-                status_enum = AuditStatus(status)
-                query = query.filter(AuditTask.status == status_enum)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="无效的状态参数")
-
-        # 分页
-        total = query.count()
-        tasks = query.order_by(AuditTask.created_at.desc()).offset(
-            (page - 1) * size
-        ).limit(size).all()
-
-        # 转换为响应模型
-        task_summaries = []
-        for task in tasks:
-            task_summaries.append(TaskSummary(
-                id=task.id,
-                task_name=task.task_name,
-                status=task.status.value,
-                progress_percentage=task.progress_percentage or 0,
-                total_files=task.total_files,
-                processed_files=task.processed_files,
-                created_at=task.created_at,
-                completed_at=task.completed_at
-            ))
-
-        return TaskListResponse(
-            data=task_summaries,
-            total=total,
-            page=page,
-            size=size,
-            pages=(total + size - 1) // size
-        )
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"获取审计结果失败: {str(e)}")
 
 
-@router.get("/tasks/{task_id}")
-async def get_task_details(task_id: str, db: Session = Depends(get_db)):
-    """获取任务详情"""
+@router.get("/{audit_id}/summary", summary="获取审计结果摘要")
+async def get_result_summary(
+    audit_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取审计结果的摘要信息
+
+    - **audit_id**: 审计ID
+    """
     try:
-        task = db.query(AuditTask).filter(AuditTask.id == task_id).first()
-        if not task:
-            raise HTTPException(status_code=404, detail="任务不存在")
+        summary = await result_service.get_result_summary(audit_id)
+        if not summary:
+            raise HTTPException(status_code=404, detail="审计结果不存在")
+        return summary
 
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取结果摘要失败: {str(e)}")
+
+
+@router.get("/{audit_id}/issues", summary="获取发现的问题")
+async def get_audit_issues(
+    audit_id: str,
+    severity: Optional[str] = None,
+    type: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取审计中发现的问题列表
+
+    - **audit_id**: 审计ID
+    - **severity**: 问题严重程度筛选
+    - **type**: 问题类型筛选
+    """
+    try:
+        issues = await result_service.get_audit_issues(audit_id, severity, type)
         return {
-            "id": task.id,
-            "task_name": task.task_name,
-            "status": task.status.value,
-            "progress_percentage": task.progress_percentage or 0,
-            "current_step": task.current_step,
-            "total_files": task.total_files,
-            "processed_files": task.processed_files,
-            "created_at": task.created_at,
-            "updated_at": task.updated_at,
-            "completed_at": task.completed_at,
-            "summary": task.summary
+            "audit_id": audit_id,
+            "issues": issues,
+            "total_count": len(issues)
         }
-    except HTTPException:
-        raise
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"获取问题列表失败: {str(e)}")
 
 
-@router.delete("/tasks/{task_id}")
-async def delete_task(task_id: str, db: Session = Depends(get_db)):
-    """删除任务"""
+@router.get("/{audit_id}/comparisons", summary="获取合同-发票对比结果")
+async def get_comparisons(
+    audit_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取合同与发票的详细对比结果
+
+    - **audit_id**: 审计ID
+    """
     try:
-        task = db.query(AuditTask).filter(AuditTask.id == task_id).first()
-        if not task:
-            raise HTTPException(status_code=404, detail="任务不存在")
+        comparisons = await result_service.get_comparisons(audit_id)
+        return {
+            "audit_id": audit_id,
+            "comparisons": comparisons
+        }
 
-        # 删除关联的合同和发票
-        from app.models.contract import Contract
-        from app.models.invoice import Invoice
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取对比结果失败: {str(e)}")
 
-        db.query(Contract).filter(Contract.audit_task_id == task_id).delete()
-        db.query(Invoice).filter(Invoice.audit_task_id == task_id).delete()
 
-        # 删除任务
-        db.delete(task)
-        db.commit()
+@router.get("/{audit_id}/contract-info", summary="获取合同信息")
+async def get_contract_info(
+    audit_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取提取的合同信息
 
-        return {"message": "任务删除成功"}
+    - **audit_id**: 审计ID
+    """
+    try:
+        contract_info = await result_service.get_contract_info(audit_id)
+        if not contract_info:
+            raise HTTPException(status_code=404, detail="合同信息不存在")
+        return contract_info
+
     except HTTPException:
         raise
     except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"获取合同信息失败: {str(e)}")
+
+
+@router.get("/{audit_id}/invoices", summary="获取发票信息")
+async def get_invoice_info(
+    audit_id: str,
+    status: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取提取的发票信息
+
+    - **audit_id**: 审计ID
+    - **status**: 发票状态筛选
+    """
+    try:
+        invoices = await result_service.get_invoice_info(audit_id, status)
+        return {
+            "audit_id": audit_id,
+            "invoices": invoices,
+            "total_count": len(invoices)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取发票信息失败: {str(e)}")
+
+
+@router.get("/{audit_id}/export/pdf", summary="导出PDF报告")
+@router.post("/{audit_id}/export/pdf", summary="导出PDF报告")
+async def export_pdf_report(
+    audit_id: str,
+    include_details: bool = True,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    导出PDF格式的审计报告
+
+    - **audit_id**: 审计ID
+    - **include_details**: 是否包含详细信息
+    """
+    try:
+        pdf_path = await result_service.generate_pdf_report(audit_id, include_details)
+
+        if not os.path.exists(pdf_path):
+            raise HTTPException(status_code=500, detail="PDF报告生成失败")
+
+        return FileResponse(
+            path=pdf_path,
+            filename=f"audit_report_{audit_id}.pdf",
+            media_type="application/pdf"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出PDF报告失败: {str(e)}")
+
+
+@router.get("/{audit_id}/export/excel", summary="导出Excel报告")
+@router.post("/{audit_id}/export/excel", summary="导出Excel报告")
+async def export_excel_report(
+    audit_id: str,
+    include_raw_data: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    导出Excel格式的审计报告
+
+    - **audit_id**: 审计ID
+    - **include_raw_data**: 是否包含原始数据
+    """
+    try:
+        excel_path = await result_service.generate_excel_report(audit_id, include_raw_data)
+
+        if not os.path.exists(excel_path):
+            raise HTTPException(status_code=500, detail="Excel报告生成失败")
+
+        return FileResponse(
+            path=excel_path,
+            filename=f"audit_report_{audit_id}.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出Excel报告失败: {str(e)}")
+
+
+@router.get("/{audit_id}/export/json", summary="导出JSON数据")
+@router.post("/{audit_id}/export/json", summary="导出JSON数据")
+async def export_json_data(
+    audit_id: str,
+    include_images: bool = False,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    导出JSON格式的原始数据
+
+    - **audit_id**: 审计ID
+    - **include_images**: 是否包含图像数据
+    """
+    try:
+        json_data = await result_service.export_json_data(audit_id, include_images)
+        return {
+            "audit_id": audit_id,
+            "export_time": json_data.get("export_time"),
+            "data": json_data.get("data"),
+            "metadata": json_data.get("metadata")
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出JSON数据失败: {str(e)}")
+
+
+@router.get("/{audit_id}/images/{image_type}/{image_id}", summary="获取图像文件")
+async def get_image_file(
+    audit_id: str,
+    image_type: str,  # contract, invoice, etc.
+    image_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取审计过程中的图像文件
+
+    - **audit_id**: 审计ID
+    - **image_type**: 图像类型
+    - **image_id**: 图像ID
+    """
+    try:
+        image_path = await result_service.get_image_file(audit_id, image_type, image_id)
+
+        if not os.path.exists(image_path):
+            raise HTTPException(status_code=404, detail="图像文件不存在")
+
+        return FileResponse(
+            path=image_path,
+            filename=os.path.basename(image_path)
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取图像文件失败: {str(e)}")
+
+
+@router.post("/{audit_id}/share", summary="生成分享链接")
+async def generate_share_link(
+    audit_id: str,
+    expire_hours: int = 24,
+    password: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    生成审计结果的分享链接
+
+    - **audit_id**: 审计ID
+    - **expire_hours**: 链接有效期（小时）
+    - **password**: 访问密码（可选）
+    """
+    try:
+        share_info = await result_service.generate_share_link(audit_id, expire_hours, password)
+        return share_info
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"生成分享链接失败: {str(e)}")
+
+
+@router.get("/shared/{share_id}", summary="访问分享的审计结果")
+async def get_shared_result(
+    share_id: str,
+    password: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    通过分享链接访问审计结果
+
+    - **share_id**: 分享ID
+    - **password**: 访问密码（如果设置了密码）
+    """
+    try:
+        result = await result_service.get_shared_result(share_id, password)
+        if not result:
+            raise HTTPException(status_code=404, detail="分享链接不存在或已过期")
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"访问分享结果失败: {str(e)}")

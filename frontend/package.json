@@ -1,10 +1,11 @@
 {
   "name": "invoice-audit-frontend",
   "version": "1.0.0",
-  "private": true,
+  "type": "module",
+  "description": "智能合同发票审计系统前端",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc && vite build",
+    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
     "format": "prettier --write src/"
@@ -14,26 +15,16 @@
     "vue-router": "^4.2.0",
     "pinia": "^2.1.0",
     "element-plus": "^2.4.0",
-    "@element-plus/icons-vue": "^2.3.0",
-    "axios": "^1.6.0",
-    "echarts": "^5.4.0",
-    "vue-echarts": "^6.6.0",
-    "dayjs": "^1.11.0",
-    "nprogress": "^0.2.0",
-    "file-saver": "^2.0.5",
-    "jszip": "^3.10.0"
+    "@element-plus/icons-vue": "^2.1.0",
+    "axios": "^1.6.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "@types/nprogress": "^0.2.0",
-    "@types/file-saver": "^2.0.5",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
     "@vitejs/plugin-vue": "^4.5.0",
     "@vue/eslint-config-prettier": "^8.0.0",
     "@vue/eslint-config-typescript": "^12.0.0",
     "@vue/tsconfig": "^0.4.0",
-    "eslint": "^8.45.0",
+    "eslint": "^8.50.0",
     "eslint-plugin-vue": "^9.17.0",
     "prettier": "^3.0.0",
     "typescript": "~5.2.0",

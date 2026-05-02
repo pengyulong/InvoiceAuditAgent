@@ -1,477 +1,331 @@
 <template>
-  <div class="home-container">
-    <!-- 顶部导航 -->
-    <header class="header">
-      <div class="header-content">
-        <div class="logo">
-          <el-icon class="logo-icon"><Document /></el-icon>
-          <h1 class="logo-text">智能合同发票审计系统</h1>
-        </div>
-        <div class="header-actions">
-          <el-button type="primary" @click="startAudit">
-            <el-icon><Upload /></el-icon>
-            开始审计
-          </el-button>
-        </div>
+  <div class="home">
+    <!-- Hero Section -->
+    <section class="hero-section">
+      <div class="hero-content">
+        <h1 class="hero-title">AI驱动的智能审计解决方案</h1>
+        <p class="hero-subtitle">
+          通过先进的多模态大模型技术，自动化审计采购合同与发票的匹配性、合规性和准确性
+        </p>
+        <el-button
+          type="primary"
+          size="large"
+          class="cta-button"
+          @click="startAudit"
+        >
+          <span class="mr-2">▶️</span>
+          开始审计
+        </el-button>
       </div>
-    </header>
+    </section>
 
-    <!-- 主要内容 -->
-    <main class="main-content">
-      <!-- Hero区域 -->
-      <section class="hero-section">
-        <div class="hero-content">
-          <h2 class="hero-title">基于AI的智能审计解决方案</h2>
-          <p class="hero-description">
-            通过多模态大模型和LLM技术，自动化审计采购合同与发票的匹配性、合规性和准确性
-          </p>
-          <div class="hero-actions">
-            <el-button size="large" type="primary" @click="startAudit">
-              <el-icon><Plus /></el-icon>
-              创建审计任务
-            </el-button>
-            <el-button size="large" @click="viewDemo">
-              <el-icon><VideoPlay /></el-icon>
-              观看演示
-            </el-button>
-          </div>
-        </div>
-        <div class="hero-image">
-          <img src="/src/assets/images/hero-illustration.svg" alt="智能审计" />
-        </div>
-      </section>
-
-      <!-- 特性介绍 -->
-      <section class="features-section">
-        <div class="container">
-          <h3 class="section-title">核心功能特性</h3>
-          <div class="features-grid">
-            <div class="feature-card">
-              <div class="feature-icon">
-                <el-icon size="48"><View /></el-icon>
-              </div>
-              <h4 class="feature-title">智能识别</h4>
-              <p class="feature-description">
-                使用先进的多模态AI技术，准确识别合同和发票中的关键信息
-              </p>
-            </div>
-            <div class="feature-card">
-              <div class="feature-icon">
-                <el-icon size="48"><Connection /></el-icon>
-              </div>
-              <h4 class="feature-title">交叉验证</h4>
-              <p class="feature-description">
-                自动匹配合同与发票信息，发现不一致之处和潜在风险
-              </p>
-            </div>
-            <div class="feature-card">
-              <div class="feature-icon">
-                <el-icon size="48"><Warning /></el-icon>
-              </div>
-              <h4 class="feature-title">风险检测</h4>
-              <p class="feature-description">
-                智能识别重复发票、金额异常等风险问题，提供专业建议
-              </p>
-            </div>
-            <div class="feature-card">
-              <div class="feature-icon">
-                <el-icon size="48"><Document /></el-icon>
-              </div>
-              <h4 class="feature-title">报告生成</h4>
-              <p class="feature-description">
-                自动生成详细的审计报告，支持多种格式导出和分享
-              </p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 统计数据 -->
-      <section class="stats-section">
-        <div class="container">
-          <div class="stats-grid">
-            <div class="stat-item">
-              <div class="stat-number">90%+</div>
-              <div class="stat-label">审计效率提升</div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-number">95%+</div>
-              <div class="stat-label">识别准确率</div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-number">60秒</div>
-              <div class="stat-label">平均审计时间</div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-number">24/7</div>
-              <div class="stat-label">全天候服务</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 使用流程 -->
-      <section class="workflow-section">
-        <div class="container">
-          <h3 class="section-title">使用流程</h3>
-          <div class="workflow-steps">
-            <div class="step-item">
-              <div class="step-number">1</div>
-              <div class="step-content">
-                <h4 class="step-title">上传文件</h4>
-                <p class="step-description">上传包含合同和发票的ZIP文件</p>
-              </div>
-            </div>
-            <div class="step-arrow">
-              <el-icon><ArrowRight /></el-icon>
-            </div>
-            <div class="step-item">
-              <div class="step-number">2</div>
-              <div class="step-content">
-                <h4 class="step-title">AI分析</h4>
-                <p class="step-description">系统自动分析文件内容并提取关键信息</p>
-              </div>
-            </div>
-            <div class="step-arrow">
-              <el-icon><ArrowRight /></el-icon>
-            </div>
-            <div class="step-item">
-              <div class="step-number">3</div>
-              <div class="step-content">
-                <h4 class="step-title">交叉验证</h4>
-                <p class="step-description">对比合同与发票信息，检测异常情况</p>
-              </div>
-            </div>
-            <div class="step-arrow">
-              <el-icon><ArrowRight /></el-icon>
-            </div>
-            <div class="step-item">
-              <div class="step-number">4</div>
-              <div class="step-content">
-                <h4 class="step-title">生成报告</h4>
-                <p class="step-description">获得详细的审计报告和专业建议</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <!-- 页脚 -->
-    <footer class="footer">
-      <div class="container">
-        <div class="footer-content">
-          <div class="footer-section">
-            <h5>智能合同发票审计系统</h5>
-            <p>基于AI的专业审计解决方案</p>
-          </div>
-          <div class="footer-section">
-            <h5>技术支持</h5>
-            <p>多模态大模型 | LLM技术 | 智能分析</p>
-          </div>
-          <div class="footer-section">
-            <h5>联系我们</h5>
-            <p>获取技术支持和产品咨询</p>
-          </div>
-        </div>
-        <div class="footer-bottom">
-          <p>&copy; 2024 智能合同发票审计系统. 保留所有权利.</p>
-        </div>
+    <!-- Features Section -->
+    <section class="features-section">
+      <div class="section-header">
+        <h2 class="section-title">核心功能</h2>
+        <p class="section-subtitle">为企业提供专业的智能审计服务</p>
       </div>
-    </footer>
+
+      <el-row :gutter="24" class="features-grid">
+        <el-col :lg="8" :md="12" :sm="24" v-for="feature in features" :key="feature.id">
+          <el-card class="feature-card" shadow="hover">
+            <div class="feature-icon">
+              <span :style="`font-size: 48px; color: ${feature.color}`">
+                {{ feature.icon }}
+              </span>
+            </div>
+            <h3 class="feature-title">{{ feature.title }}</h3>
+            <p class="feature-description">{{ feature.description }}</p>
+          </el-card>
+        </el-col>
+      </el-row>
+    </section>
+
+    <!-- Statistics Section -->
+    <section class="stats-section">
+      <div class="section-header">
+        <h2 class="section-title">系统统计</h2>
+        <p class="section-subtitle">实时展示系统运行数据</p>
+      </div>
+
+      <el-row :gutter="24" class="stats-grid">
+        <el-col :lg="6" :md="12" :sm="24" v-for="stat in statistics" :key="stat.key">
+          <el-card class="stat-card">
+            <div class="stat-content">
+              <div class="stat-icon">
+                <span :style="`font-size: 32px; color: ${stat.color}`">
+                  {{ stat.icon }}
+                </span>
+              </div>
+              <div class="stat-info">
+                <h3 class="stat-value">{{ stat.value }}</h3>
+                <p class="stat-label">{{ stat.label }}</p>
+              </div>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
+    </section>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+// import { Play, Robot, DataAnalysis, Shield, Document, TrendCharts } from '@element-plus/icons-vue'
+import { useAuditStore } from '@/stores/audit'
 
 const router = useRouter()
+const auditStore = useAuditStore()
+
+const features = ref([
+  {
+    id: 1,
+    icon: '🤖',
+    title: '自动化审计',
+    description: '替代人工审核，提高审计效率90%以上',
+    color: '#409EFF'
+  },
+  {
+    id: 2,
+    icon: '📊',
+    title: '智能分析',
+    description: '利用多模态大模型理解合同和发票图像内容',
+    color: '#67C23A'
+  },
+  {
+    id: 3,
+    icon: '🛡️',
+    title: '风险识别',
+    description: '自动发现重复发票、金额不符等异常问题',
+    color: '#E6A23C'
+  }
+])
+
+const statistics = ref([
+  {
+    key: 'totalAudits',
+    icon: '📄',
+    label: '总审计次数',
+    value: '1,234',
+    color: '#409EFF'
+  },
+  {
+    key: 'successRate',
+    icon: '📈',
+    label: '成功率',
+    value: '98.5%',
+    color: '#67C23A'
+  },
+  {
+    key: 'processingTime',
+    icon: '🤖',
+    label: '平均处理时间',
+    value: '2.5分钟',
+    color: '#E6A23C'
+  },
+  {
+    key: 'issuesFound',
+    icon: '🛡️',
+    label: '发现问题',
+    value: '456',
+    color: '#F56C6C'
+  }
+])
 
 const startAudit = () => {
   router.push('/audit/upload')
 }
 
-const viewDemo = () => {
-  // 这里可以添加演示视频或示例链接
-  ElMessage.info('演示功能开发中，敬请期待！')
-}
+onMounted(() => {
+  // 可以在这里加载统计数据
+})
 </script>
 
 <style scoped>
-.home-container {
+.home {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.header {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.header-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1rem 2rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.logo-icon {
-  font-size: 2rem;
-  color: white;
-}
-
-.logo-text {
-  color: white;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.main-content {
-  padding: 2rem;
 }
 
 .hero-section {
-  max-width: 1200px;
-  margin: 0 auto 4rem;
-  padding: 4rem 2rem;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4rem;
-  align-items: center;
-}
-
-.hero-content h2 {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  font-size: 3rem;
-  font-weight: 700;
-  margin-bottom: 1.5rem;
-  line-height: 1.2;
+  padding: 120px 0;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
 }
 
-.hero-description {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 1.25rem;
-  margin-bottom: 2rem;
-  line-height: 1.6;
+.hero-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+  opacity: 0.3;
 }
 
-.hero-actions {
-  display: flex;
-  gap: 1rem;
-}
-
-.hero-image {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.hero-image img {
-  max-width: 100%;
-  height: auto;
-}
-
-.features-section {
-  background: white;
-  border-radius: 1rem;
-  padding: 4rem 2rem;
-  margin-bottom: 4rem;
-}
-
-.container {
-  max-width: 1200px;
+.hero-content {
+  max-width: 800px;
   margin: 0 auto;
+  padding: 0 20px;
+  position: relative;
+  z-index: 1;
+}
+
+.hero-title {
+  font-size: 48px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  line-height: 1.2;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.hero-subtitle {
+  font-size: 20px;
+  line-height: 1.6;
+  margin-bottom: 40px;
+  opacity: 0.9;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.cta-button {
+  font-size: 18px;
+  padding: 16px 32px;
+  height: auto;
+  border-radius: 50px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+  transition: all 0.3s ease;
+}
+
+.cta-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.3);
+}
+
+.features-section,
+.stats-section {
+  padding: 80px 0;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 60px;
 }
 
 .section-title {
-  text-align: center;
-  font-size: 2.5rem;
+  font-size: 36px;
   font-weight: 600;
-  margin-bottom: 3rem;
-  color: #1f2937;
+  color: #303133;
+  margin-bottom: 16px;
 }
 
-.features-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 2rem;
+.section-subtitle {
+  font-size: 18px;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.features-grid,
+.stats-grid {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
 }
 
 .feature-card {
+  height: 280px;
   text-align: center;
-  padding: 2rem;
-  border-radius: 0.75rem;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: all 0.3s ease;
+  border: none;
+  border-radius: 16px;
 }
 
 .feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  transform: translateY(-8px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
 }
 
 .feature-icon {
-  color: #6366f1;
-  margin-bottom: 1.5rem;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
 }
 
 .feature-title {
-  font-size: 1.25rem;
+  font-size: 24px;
   font-weight: 600;
-  margin-bottom: 1rem;
-  color: #1f2937;
+  color: #303133;
+  margin-bottom: 16px;
 }
 
 .feature-description {
-  color: #6b7280;
+  font-size: 16px;
+  color: #606266;
   line-height: 1.6;
 }
 
 .stats-section {
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border-radius: 1rem;
-  padding: 3rem 2rem;
-  margin-bottom: 4rem;
+  background-color: #f8f9fa;
 }
 
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 2rem;
+.stat-card {
+  height: 140px;
+  display: flex;
+  align-items: center;
+  border-radius: 12px;
+  border: none;
 }
 
-.stat-item {
-  text-align: center;
+.stat-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
-.stat-number {
-  font-size: 3rem;
+.stat-icon {
+  flex-shrink: 0;
+}
+
+.stat-info {
+  flex: 1;
+  text-align: left;
+}
+
+.stat-value {
+  font-size: 28px;
   font-weight: 700;
-  color: white;
-  margin-bottom: 0.5rem;
+  color: #303133;
+  margin-bottom: 4px;
+  line-height: 1;
 }
 
 .stat-label {
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 1.1rem;
-}
-
-.workflow-section {
-  background: white;
-  border-radius: 1rem;
-  padding: 4rem 2rem;
-  margin-bottom: 4rem;
-}
-
-.workflow-steps {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 2rem;
-  flex-wrap: wrap;
-}
-
-.step-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  max-width: 200px;
-}
-
-.step-number {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: #6366f1;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-}
-
-.step-title {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  color: #1f2937;
-}
-
-.step-description {
-  color: #6b7280;
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.step-arrow {
-  color: #6b7280;
-  font-size: 1.5rem;
-}
-
-.footer {
-  background: rgba(0, 0, 0, 0.2);
-  color: white;
-  padding: 2rem;
-}
-
-.footer-content {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 2rem;
-  margin-bottom: 2rem;
-}
-
-.footer-section h5 {
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-}
-
-.footer-section p {
-  color: rgba(255, 255, 255, 0.8);
-  line-height: 1.5;
-}
-
-.footer-bottom {
-  text-align: center;
-  padding-top: 2rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  color: #909399;
+  margin: 0;
 }
 
 @media (max-width: 768px) {
-  .hero-section {
-    grid-template-columns: 1fr;
-    text-align: center;
-    gap: 2rem;
+  .hero-title {
+    font-size: 32px;
   }
 
-  .hero-content h2 {
-    font-size: 2rem;
+  .hero-subtitle {
+    font-size: 18px;
   }
 
-  .workflow-steps {
-    flex-direction: column;
+  .section-title {
+    font-size: 28px;
   }
 
-  .step-arrow {
-    transform: rotate(90deg);
+  .feature-card {
+    height: 240px;
+    margin-bottom: 16px;
   }
 }
 </style>

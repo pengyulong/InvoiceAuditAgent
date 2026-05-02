@@ -1,110 +1,187 @@
-import axios from 'axios'
-import type { ApiResponse } from '@/types'
+import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
+import { useAppStore } from '@/stores/app'
+import type { ApiResponse } from '@/types'
 
-// 创建axios实例
-const api = axios.create({
-  baseURL: '/api/v1',
-  timeout: 60000, // 60秒超时
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
+const TOKEN_KEY = 'invoice_audit_access_token'
+const USER_KEY = 'invoice_audit_username'
 
-// 请求拦截器
-api.interceptors.request.use(
-  (config) => {
-    // 可以在这里添加token等认证信息
-    console.log('API请求:', config.method?.toUpperCase(), config.url)
-    return config
+export const authStorage = {
+  getToken(): string {
+    return localStorage.getItem(TOKEN_KEY) || ''
   },
-  (error) => {
-    console.error('请求错误:', error)
-    return Promise.reject(error)
+  getUsername(): string {
+    return localStorage.getItem(USER_KEY) || ''
+  },
+  setSession(token: string, username: string) {
+    localStorage.setItem(TOKEN_KEY, token)
+    localStorage.setItem(USER_KEY, username)
+  },
+  clearSession() {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(USER_KEY)
+  },
+  isAuthenticated(): boolean {
+    return Boolean(this.getToken())
   }
-)
+}
 
-// 响应拦截器
-api.interceptors.response.use(
-  (response) => {
-    console.log('API响应:', response.status, response.data)
+class ApiService {
+  private instance: AxiosInstance
 
-    // 检查业务状态码
-    if (response.data.code !== 200) {
-      ElMessage.error(response.data.message || '请求失败')
-      return Promise.reject(new Error(response.data.message || '请求失败'))
-    }
+  constructor() {
+    this.instance = axios.create({
+      baseURL: import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1',
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    })
 
+    this.setupInterceptors()
+  }
+
+  private setupInterceptors() {
+    // 请求拦截器
+    this.instance.interceptors.request.use(
+      (config) => {
+        const appStore = useAppStore()
+        if ((config as AxiosRequestConfig & { loading?: boolean }).loading !== false) {
+          appStore.setLoading(true)
+        }
+        const token = authStorage.getToken()
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`
+        }
+        return config
+      },
+      (error) => {
+        const appStore = useAppStore()
+        appStore.setLoading(false)
+        return Promise.reject(error)
+      }
+    )
+
+    // 响应拦截器
+    this.instance.interceptors.response.use(
+      (response: AxiosResponse<ApiResponse>) => {
+        const appStore = useAppStore()
+        appStore.setLoading(false)
+
+        const { data } = response
+
+        // 检查响应格式 - 支持两种格式：
+        // 1. {code: 200, data: {...}} 标准格式
+        // 2. 直接返回数据格式（文件上传等接口）
+        if (data.code !== undefined && data.code !== 200) {
+          ElMessage.error(data.message || '请求失败')
+          return Promise.reject(new Error(data.message))
+        }
+
+        return response
+      },
+      (error) => {
+        const appStore = useAppStore()
+        appStore.setLoading(false)
+
+        let message = '网络错误'
+        if (error.response) {
+          const { status, data } = error.response
+          switch (status) {
+            case 400:
+              message = data.message || data.detail || '请求参数错误'
+              break
+            case 401:
+              message = '未授权，请重新登录'
+              authStorage.clearSession()
+              if (window.location.pathname !== '/login') {
+                window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
+              }
+              break
+            case 403:
+              message = '拒绝访问'
+              break
+            case 404:
+              message = '请求的资源不存在'
+              break
+            case 500:
+              message = data.message || data.detail || '服务器内部错误'
+              break
+            default:
+              message = data.message || data.detail || `请求失败 (${status})`
+          }
+        } else if (error.request) {
+          message = '网络连接失败，请检查网络设置'
+        }
+
+        ElMessage.error(message)
+        return Promise.reject(error)
+      }
+    )
+  }
+
+  // GET 请求
+  async get<T = any>(url: string, params?: any, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.instance.get(url, { params, ...config })
+    // 支持两种响应格式：{code: 200, data: {...}} 或直接返回数据
+    return response.data.data || response.data
+  }
+
+  // POST 请求
+  async post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.instance.post(url, data, config)
+    // 支持两种响应格式：{code: 200, data: {...}} 或直接返回数据
+    return response.data.data || response.data
+  }
+
+  // PUT 请求
+  async put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.instance.put(url, data, config)
+    // 支持两种响应格式：{code: 200, data: {...}} 或直接返回数据
+    return response.data.data || response.data
+  }
+
+  // DELETE 请求
+  async delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+    const response = await this.instance.delete(url, config)
+    // 支持两种响应格式：{code: 200, data: {...}} 或直接返回数据
+    return response.data.data || response.data
+  }
+
+  // 文件上传
+  async upload<T = any>(url: string, formData: FormData, onProgress?: (progress: number) => void): Promise<T> {
+    const response = await this.instance.post(url, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+          onProgress(progress)
+        }
+      }
+    })
+    // 文件上传接口直接返回数据，没有.data字段
     return response.data
-  },
-  (error) => {
-    console.error('响应错误:', error)
-
-    let message = '网络错误'
-
-    if (error.response) {
-      // 服务器响应错误
-      const { status, data } = error.response
-
-      switch (status) {
-        case 400:
-          message = data.detail || '请求参数错误'
-          break
-        case 401:
-          message = '未授权访问'
-          break
-        case 403:
-          message = '禁止访问'
-          break
-        case 404:
-          message = '请求的资源不存在'
-          break
-        case 500:
-          message = '服务器内部错误'
-          break
-        default:
-          message = data.detail || `请求失败 (${status})`
-      }
-    } else if (error.request) {
-      // 请求已发送但没有收到响应
-      message = '网络连接超时，请检查网络连接'
-    }
-
-    ElMessage.error(message)
-    return Promise.reject(error)
   }
-)
 
-// 通用API方法
-export const apiGet = <T = any>(url: string, params?: any): Promise<ApiResponse<T>> => {
-  return api.get(url, { params })
+  // 下载文件
+  async download(url: string, filename?: string): Promise<void> {
+    const response = await this.instance.get(url, {
+      responseType: 'blob'
+    })
+
+    const blob = new Blob([response.data])
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = downloadUrl
+    link.download = filename || 'download'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(downloadUrl)
+  }
 }
 
-export const apiPost = <T = any>(url: string, data?: any, config?: any): Promise<ApiResponse<T>> => {
-  return api.post(url, data, config)
-}
-
-export const apiPut = <T = any>(url: string, data?: any): Promise<ApiResponse<T>> => {
-  return api.put(url, data)
-}
-
-export const apiDelete = <T = any>(url: string): Promise<ApiResponse<T>> => {
-  return api.delete(url)
-}
-
-// 文件上传方法
-export const uploadFile = (url: string, formData: FormData, onProgress?: (percent: number) => void): Promise<ApiResponse> => {
-  return api.post(url, formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    },
-    onUploadProgress: (progressEvent) => {
-      if (onProgress && progressEvent.total) {
-        const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total)
-        onProgress(percent)
-      }
-    }
-  })
-}
-
-export default api
+export const apiService = new ApiService()
+export default apiService
