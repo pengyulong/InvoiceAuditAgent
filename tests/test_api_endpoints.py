@@ -55,7 +55,7 @@ class TestAPIEndpoints:
         data = response.json()
         assert data["status"] == "success"
         assert "data" in data
-        assert "qwen_available" in data["data"]
+        assert "baidu_ocr_available" in data["data"]
         assert "deepseek_available" in data["data"]
 
     def test_upload_endpoint_no_file(self, client):

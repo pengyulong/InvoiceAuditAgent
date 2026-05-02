@@ -8,7 +8,7 @@
 ### 1.2 技术栈选择
 - **前端**: Vue 3 + TypeScript + Element Plus
 - **后端**: Python 3.9+ + FastAPI + LangGraph
-- **AI模型**: 阿里云qwen3-vl-plus + DeepSeek-V3.2-exp
+- **AI模型**: 百度云PaddleOCR + DeepSeek
 - **数据库**: SQLite (开发) / PostgreSQL (生产)
 - **缓存**: Redis
 
@@ -625,8 +625,8 @@ def audit_task(self, task_id: str, files: Dict[str, Any]):
 - [ ] 添加响应式设计
 
 #### 8.2.4 AI模型集成
-- [ ] 配置阿里云qwen3-vl-8b-thinking API
-- [ ] 配置DeepSeek-V3.2-exp API
+- [ ] 配置百度云PaddleOCR API
+- [ ] 配置DeepSeek API
 - [ ] 实现模型调用封装
 - [ ] 设计prompt模板
 - [ ] 实现结果解析和结构化
@@ -651,9 +651,8 @@ from app.core.config import settings
 
 class AIService:
     def __init__(self):
-        self.qwen_client = httpx.AsyncClient(
-            base_url=settings.QWEN_API_BASE,
-            headers={"Authorization": f"Bearer {settings.QWEN_API_KEY}"}
+        self.baidu_ocr_client = httpx.AsyncClient(
+            base_url=settings.BAIDU_OCR_API_BASE,
         )
         self.deepseek_client = httpx.AsyncClient(
             base_url=settings.DEEPSEEK_API_BASE,
@@ -661,29 +660,26 @@ class AIService:
         )
 
     async def analyze_contract_image(self, image_path: str) -> Dict[str, Any]:
-        # 使用qwen3-vl进行图像分析
+        # 使用百度OCR进行图像文字识别
         with open(image_path, 'rb') as f:
             image_data = f.read()
 
-        response = await self.qwen_client.post(
+        ocr_result = await self.baidu_ocr_client.post(
+            "/rest/2.0/ocr/v1/accurate_basic",
+            data={"image": base64.b64encode(image_data).decode()},
+            params={"access_token": await self._get_access_token()}
+        )
+
+        # 使用DeepSeek进行结构化提取
+        text_content = "\n".join([w["words"] for w in ocr_result.json()["words_result"]])
+        response = await self.deepseek_client.post(
             "/v1/chat/completions",
             json={
-                "model": "qwen3-vl-8b-thinking",
+                "model": settings.DEEPSEEK_MODEL,
                 "messages": [
                     {
                         "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "请分析这份合同图像，提取以下关键信息：合同编号、买卖双方、总金额、税率、商品清单"
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{base64.b64encode(image_data).decode()}"
-                                }
-                            }
-                        ]
+                        "content": "请分析以下合同文本，提取关键信息：合同编号、买卖双方、总金额、税率、商品清单\n\n" + text_content
                     }
                 ]
             }

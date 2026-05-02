@@ -1,4 +1,4 @@
-"""发票分析Agent - 使用千问VL模型批量提取发票信息并进行重复检测"""
+"""发票分析Agent - 使用百度OCR+DeepSeek批量提取发票信息并进行重复检测"""
 import json
 import logging
 from typing import Dict, Any, List

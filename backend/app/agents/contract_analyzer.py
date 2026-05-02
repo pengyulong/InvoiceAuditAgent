@@ -1,4 +1,4 @@
-"""合同分析Agent - 使用千问VL模型提取合同关键信息"""
+"""合同分析Agent - 使用百度OCR+DeepSeek提取合同关键信息"""
 import json
 import logging
 from typing import Dict, Any, List

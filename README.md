@@ -62,7 +62,7 @@ InvoiceAuditAgent/
 - **数据库**: SQLite (开发) / PostgreSQL (生产)
 - **缓存**: Redis
 - **任务队列**: Celery
-- **AI模型**: 阿里云qwen3-vl + DeepSeek-V3.2
+- **AI模型**: 百度云PaddleOCR + DeepSeek
 
 ### 核心功能
 1. 文件上传和管理

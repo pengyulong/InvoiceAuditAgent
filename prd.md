@@ -47,8 +47,8 @@ Agent编排层 (简化版LangGraph逻辑)
 - **文件处理**: 浏览器File API
 
 #### AI模型（实际调用）
-- **多模态模型**: 阿里云qwen3-vl-8b-thinking API
-- **推理LLM**: DeepSeek-V3.2-exp API
+- **OCR模型**: 百度云PaddleOCR API
+- **推理LLM**: DeepSeek API
 - **备用方案**: 本地mock数据（演示模式）
 
 #### 存储（简化）

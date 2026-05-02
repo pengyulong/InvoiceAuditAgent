@@ -331,7 +331,7 @@ async def get_audit_statistics(db: AsyncSession = Depends(get_db)):
 @router.get("/ai-health", summary="AI服务健康检查")
 async def get_ai_service_health():
     """
-    检查AI服务（千问、DeepSeek）的连接状态和可用性
+    检查AI服务（百度OCR、DeepSeek）的连接状态和可用性
     """
     try:
         health_status = await ai_service.health_check()
