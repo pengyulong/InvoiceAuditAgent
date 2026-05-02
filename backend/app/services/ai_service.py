@@ -344,7 +344,7 @@ class AIService:
         else:
             logger.warning("DeepSeek API密钥未配置")
 
-    async def extract_contract_info(self, image_path: str) -> Dict[str, Any]:
+    async def extract_contract_info(self, image_path: str, progress_callback=None) -> Dict[str, Any]:
         """从合同图片中提取信息：百度OCR文字提取 + DeepSeek结构化"""
         logger.info(f"开始提取合同信息: {image_path}")
 
@@ -353,6 +353,8 @@ class AIService:
                 raise AIServiceError("百度OCR客户端未初始化")
 
             # Step 1: 百度OCR提取原始文字
+            if progress_callback:
+                await progress_callback("contract_analyzer", 10, "正在进行OCR文字识别...")
             raw_text = await self._recognize_contract_text(image_path)
 
             if not raw_text.strip():
@@ -363,6 +365,8 @@ class AIService:
             # Step 2: DeepSeek从文字中提取结构化信息
             if not self.deepseek_client:
                 raise AIServiceError("DeepSeek客户端未初始化")
+            if progress_callback:
+                await progress_callback("contract_analyzer", 50, "正在AI分析合同内容...")
 
             prompt = f"""
 请根据以下合同OCR识别的全文，提取结构化信息并以JSON格式返回。
@@ -484,7 +488,7 @@ OCR识别的文字：
             logger.warning(f"读取PDF页数失败: {file_path}, {e}")
             return 1
 
-    async def extract_invoice_info(self, image_path: str) -> Dict[str, Any]:
+    async def extract_invoice_info(self, image_path: str, progress_callback=None) -> Dict[str, Any]:
         """从发票图片中提取信息：优先百度增值税发票OCR，失败则通用OCR+DeepSeek结构化"""
         logger.info(f"开始提取发票信息: {image_path}")
 
@@ -493,6 +497,8 @@ OCR识别的文字：
                 raise AIServiceError("百度OCR客户端未初始化")
 
             # Step 1: 尝试百度增值税发票专用接口
+            if progress_callback:
+                await progress_callback("invoice_analyzer", 10, "正在进行增值税发票识别...")
             vat_result = None
             async with self.baidu_client:
                 vat_result = await self.baidu_client.recognize_vat_invoice(image_path)
@@ -506,6 +512,8 @@ OCR识别的文字：
                     return parsed
 
             # Step 2: 通用文字识别 + DeepSeek结构化
+            if progress_callback:
+                await progress_callback("invoice_analyzer", 40, "正在进行通用OCR文字识别...")
             async with self.baidu_client:
                 raw_text = await self.baidu_client.recognize_text(image_path, use_high_accuracy=True)
 
@@ -516,6 +524,8 @@ OCR识别的文字：
 
             if not self.deepseek_client:
                 raise AIServiceError("DeepSeek客户端未初始化")
+            if progress_callback:
+                await progress_callback("invoice_analyzer", 70, "正在AI分析发票内容...")
 
             prompt = f"""
 请根据以下发票图片OCR识别的文字，提取结构化信息并以JSON格式返回。

@@ -30,9 +30,9 @@
                 {{ getStatusLabel(auditStatus) }}
               </el-tag>
             </div>
-            <div class="status-item" v-if="estimatedTime">
-              <span class="status-label">预计剩余:</span>
-              <span class="status-value">{{ formatTime(estimatedTime) }}</span>
+            <div class="status-item" v-if="auditStatus === 'processing'">
+              <span class="status-label">已耗时:</span>
+              <span class="status-value">{{ formatDuration(elapsedSeconds) }}</span>
             </div>
           </div>
 
@@ -95,127 +95,53 @@
         </div>
       </el-card>
 
-      <el-row :gutter="24">
-        <!-- 左侧：Agent详细状态 -->
-        <el-col :lg="12" :md="24" :sm="24">
-          <el-card class="agents-card" shadow="hover">
-            <template #header>
-              <div class="card-header">
-                <span class="header-icon">👥</span>
-                <span class="header-title">Agent状态详情</span>
-              </div>
-            </template>
-
-            <div class="agents-content">
-              <div
-                v-for="agent in agentStatus"
-                :key="agent.name"
-                class="agent-item"
-                :class="getAgentClass(agent.status)"
+      <!-- 实时日志 - 全宽显示 -->
+      <el-card class="logs-card" shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <el-icon class="header-icon"><Document /></el-icon>
+            <span class="header-title">实时日志</span>
+            <div class="header-actions">
+              <el-button
+                size="small"
+                :icon="Refresh"
+                @click="clearLogs"
               >
-                <div class="agent-header">
-                  <div class="agent-info">
-                    <el-icon class="agent-icon">
-                      <component :is="getAgentIcon(agent.name)" />
-                    </el-icon>
-                    <div>
-                      <h4 class="agent-name">{{ getAgentDisplayName(agent.name) }}</h4>
-                      <el-tag :type="getAgentStatusType(agent.status)" size="small">
-                        {{ getAgentStatusText(agent.status) }}
-                      </el-tag>
-                    </div>
-                  </div>
-                  <div class="agent-time" v-if="agent.start_time">
-                    <span class="time-label">用时:</span>
-                    <span class="time-value">{{ calculateDuration(agent.start_time, agent.end_time) }}</span>
-                  </div>
-                </div>
-
-                <div class="agent-details" v-if="agent.status === 'running' && agent.data">
-                  <div class="detail-item">
-                    <span class="detail-label">当前操作:</span>
-                    <span class="detail-value">{{ agent.data.message || '处理中...' }}</span>
-                  </div>
-                  <div class="detail-item" v-if="agent.data.progress !== undefined">
-                    <span class="detail-label">进度:</span>
-                    <el-progress
-                      :percentage="agent.data.progress"
-                      :stroke-width="6"
-                      :show-text="false"
-                      class="mini-progress"
-                    />
-                    <span class="progress-text">{{ agent.data.progress }}%</span>
-                  </div>
-                </div>
-
-                <div class="agent-details" v-if="agent.status === 'completed' && agent.data">
-                  <div class="success-summary">
-                    <div class="summary-item" v-for="(value, key) in agent.data" :key="key">
-                      <span class="summary-label">{{ formatSummaryLabel(key) }}:</span>
-                      <span class="summary-value">{{ formatSummaryValue(value) }}</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="agent-details" v-if="agent.status === 'error'">
-                  <div class="error-info">
-                    <el-icon class="error-icon"><Warning /></el-icon>
-                    <span class="error-message">{{ agent.error_message || '执行失败' }}</span>
-                  </div>
-                </div>
-              </div>
+                清空
+              </el-button>
+              <el-button
+                size="small"
+                :icon="Download"
+                @click="downloadLogs"
+              >
+                导出
+              </el-button>
             </div>
-          </el-card>
-        </el-col>
+          </div>
+        </template>
 
-        <!-- 右侧：实时日志 -->
-        <el-col :lg="12" :md="24" :sm="24">
-          <el-card class="logs-card" shadow="hover">
-            <template #header>
-              <div class="card-header">
-                <el-icon class="header-icon"><Document /></el-icon>
-                <span class="header-title">实时日志</span>
-                <div class="header-actions">
-                  <el-button
-                    size="small"
-                    :icon="Refresh"
-                    @click="clearLogs"
-                  >
-                    清空
-                  </el-button>
-                  <el-button
-                    size="small"
-                    :icon="Download"
-                    @click="downloadLogs"
-                  >
-                    导出
-                  </el-button>
-                </div>
-              </div>
-            </template>
-
-            <div class="logs-content" ref="logsContainer">
-              <div class="log-entries">
-                <div
-                  v-for="(log, index) in logs"
-                  :key="index"
-                  class="log-entry"
-                  :class="getLogClass(log.level)"
-                >
-                  <span class="log-time">{{ formatLogTime(log.timestamp) }}</span>
-                  <el-icon class="log-icon">
-                    <component :is="getLogIcon(log.level)" />
-                  </el-icon>
-                  <span class="log-message">{{ log.message }}</span>
-                </div>
-
-                <!-- 自动滚动到底部 -->
-                <div ref="logBottom" class="log-bottom"></div>
-              </div>
+        <div class="logs-content" ref="logsContainer">
+          <div class="log-entries">
+            <div v-if="logs.length === 0 && auditStatus === 'processing'" class="log-placeholder">
+              <span class="log-waiting-icon rotating">⏳</span>
+              <span class="log-waiting-text">等待审计输出...</span>
             </div>
-          </el-card>
-        </el-col>
-      </el-row>
+            <div
+              v-for="(log, index) in logs"
+              :key="index"
+              class="log-entry"
+              :class="getLogClass(log.level)"
+            >
+              <span class="log-time">{{ formatLogTime(log.timestamp) }}</span>
+              <el-icon class="log-icon">
+                <component :is="getLogIcon(log.level)" />
+              </el-icon>
+              <span class="log-message">{{ log.message }}</span>
+            </div>
+            <div ref="logBottom" class="log-bottom"></div>
+          </div>
+        </div>
+      </el-card>
 
       <!-- 操作按钮 -->
       <div class="action-section">
@@ -343,10 +269,12 @@ const totalFiles = ref(0)
 const processedFiles = ref(0)
 const processingTime = ref(0)
 const confidenceScore = ref(0)
+const elapsedSeconds = ref(0)
 
 // WebSocket连接
 let wsConnection: WebSocket | null = null
 let statusPollTimer: ReturnType<typeof setInterval> | null = null
+let elapsedTimer: ReturnType<typeof setInterval> | null = null
 
 // 工作流步骤定义
 const workflowSteps = ref([
@@ -703,13 +631,6 @@ const goBack = () => {
 }
 
 // 工具函数
-const formatTime = (seconds: number): string => {
-  if (seconds < 60) return `${Math.ceil(seconds)}秒`
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
-  return `${minutes}分${Math.ceil(remainingSeconds)}秒`
-}
-
 const formatDuration = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
@@ -748,50 +669,6 @@ const getConnectorClass = (status: string) => {
   return `connector-${status}`
 }
 
-const getAgentClass = (status: string) => {
-  return `agent-${status}`
-}
-
-const getAgentIcon = (agentName: string) => {
-  const iconMap: Record<string, any> = {
-    'coordinator': View,
-    'contract_analyzer': Document,
-    'invoice_analyzer': Document,
-    'cross_validator': Warning
-  }
-  return iconMap[agentName] || InfoFilled
-}
-
-const getAgentDisplayName = (agentName: string): string => {
-  const nameMap: Record<string, string> = {
-    'coordinator': '协调器Agent',
-    'contract_analyzer': '合同分析Agent',
-    'invoice_analyzer': '发票分析Agent',
-    'cross_validator': '交叉验证Agent'
-  }
-  return nameMap[agentName] || agentName
-}
-
-const getAgentStatusType = (status: string) => {
-  const typeMap: Record<string, string> = {
-    'idle': 'info',
-    'running': 'warning',
-    'completed': 'success',
-    'error': 'danger'
-  }
-  return typeMap[status] || 'info'
-}
-
-const getAgentStatusText = (status: string): string => {
-  const textMap: Record<string, string> = {
-    'idle': '等待中',
-    'running': '运行中',
-    'completed': '已完成',
-    'error': '错误'
-  }
-  return textMap[status] || status
-}
-
 const getLogClass = (level: string) => {
   return `log-${level}`
 }
@@ -806,18 +683,9 @@ const getLogIcon = (level: string) => {
   return iconMap[level] || InfoFilled
 }
 
-const formatSummaryLabel = (key: string | number): string => {
-  const labelMap: Record<string, string> = {
-    'confidence': '置信度',
-    'processed_invoices': '处理发票数',
-    'duplicates_found': '发现重复',
-    'average_confidence': '平均置信度'
-  }
-  return labelMap[String(key)] || String(key)
-}
-
 const syncStatus = async () => {
   const status = await apiService.get(`/audit/${taskId.value}/status`, undefined, { loading: false } as any)
+  const prevStatus = auditStatus.value
   auditStatus.value = status.status
   progressPercentage.value = status.progress
   currentStep.value = status.current_step
@@ -826,10 +694,15 @@ const syncStatus = async () => {
   processedFiles.value = status.processed_files || 0
   processingTime.value = status.processing_time || 0
   confidenceScore.value = status.confidence_score || 0
-  agentStatus.value = Object.entries(status.agent_status || {}).map(([name, data]: [string, any]) => ({
-    name,
-    ...data
-  }))
+
+  // 首次获取状态时，如果审计已在进行中，生成上下文日志
+  if (prevStatus === 'pending' && status.status === 'processing' && status.progress > 0) {
+    addLog('info', `审计已在进行中 - 当前进度: ${status.progress}%`)
+    addLog('info', `当前步骤: ${status.current_step || '处理中'}`)
+    if (status.processing_time > 0) {
+      addLog('info', `已处理: ${Math.round(status.processing_time)}秒`)
+    }
+  }
 
   if (status.status === 'completed') {
     handleCompleted({ task_id: taskId.value })
@@ -846,21 +719,18 @@ const syncStatus = async () => {
   }
 }
 
-const formatSummaryValue = (value: any): string => {
-  if (typeof value === 'number') {
-    if (value < 1) {
-      return `${(value * 100).toFixed(1)}%`
-    }
-    return value.toString()
-  }
-  return String(value)
-}
-
 // 生命周期
 onMounted(async () => {
   if (taskId.value) {
     // 连接WebSocket
     connectWebSocket()
+
+    // 耗时计时器（每秒更新）
+    elapsedTimer = setInterval(() => {
+      if (auditStatus.value === 'processing') {
+        elapsedSeconds.value++
+      }
+    }, 1000)
 
     // 获取初始状态
     try {
@@ -873,7 +743,7 @@ onMounted(async () => {
 
       // 添加初始日志
       addLog('info', '审计页面已加载')
-      addLog('info', `当前任务ID: ${taskId.value}`)
+      addLog('info', `任务ID: ${taskId.value}`)
     } catch (error) {
       console.error('获取状态失败:', error)
       addLog('error', '无法获取审计状态')
@@ -889,6 +759,10 @@ onUnmounted(() => {
   if (statusPollTimer) {
     clearInterval(statusPollTimer)
     statusPollTimer = null
+  }
+  if (elapsedTimer) {
+    clearInterval(elapsedTimer)
+    elapsedTimer = null
   }
   if (wsConnection) {
     wsConnection.onclose = null  // 防止重连
@@ -1116,151 +990,9 @@ onUnmounted(() => {
   background-color: #F56C6C;
 }
 
-.agents-card,
 .logs-card {
   margin-bottom: 24px;
   height: 500px;
-}
-
-.agents-content {
-  margin-top: 16px;
-  height: calc(100% - 60px);
-  overflow-y: auto;
-}
-
-.agent-item {
-  padding: 16px;
-  border: 1px solid #EBEEF5;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  background-color: #FAFAFA;
-}
-
-.agent-item.agent-completed {
-  border-color: #E1F3D8;
-  background-color: #F0F9FF;
-}
-
-.agent-item.agent-running {
-  border-color: #F7E6D0;
-  background-color: #FDF6EC;
-}
-
-.agent-item.agent-error {
-  border-color: #FDE2E2;
-  background-color: #FEF0F0;
-}
-
-.agent-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
-}
-
-.agent-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-.agent-icon {
-  font-size: 24px;
-  color: #409EFF;
-}
-
-.agent-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 4px;
-}
-
-.agent-time {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  color: #909399;
-}
-
-.agent-details {
-  font-size: 13px;
-}
-
-.detail-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-.detail-label {
-  color: #606266;
-  font-weight: 500;
-  min-width: 60px;
-}
-
-.detail-value {
-  color: #303133;
-  flex: 1;
-}
-
-.mini-progress {
-  width: 60px;
-  margin-right: 8px;
-}
-
-.progress-text {
-  color: #409EFF;
-  font-weight: 600;
-}
-
-.success-summary {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-
-.summary-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 4px 8px;
-  background-color: #F0F9FF;
-  border-radius: 4px;
-}
-
-.summary-label {
-  color: #409EFF;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.summary-value {
-  color: #303133;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.error-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background-color: #FEF0F0;
-  border-radius: 6px;
-}
-
-.error-icon {
-  color: #F56C6C;
-  font-size: 16px;
-}
-
-.error-message {
-  color: #F56C6C;
-  font-size: 13px;
 }
 
 .logs-content {
@@ -1282,6 +1014,24 @@ onUnmounted(() => {
   margin-bottom: 8px;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.log-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  gap: 16px;
+}
+
+.log-waiting-icon {
+  font-size: 32px;
+}
+
+.log-waiting-text {
+  color: #9CA3AF;
+  font-size: 14px;
 }
 
 .log-time {

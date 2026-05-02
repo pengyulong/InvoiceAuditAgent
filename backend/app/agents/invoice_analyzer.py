@@ -37,7 +37,7 @@ class InvoiceAnalyzer(BaseAgent):
             )
 
             try:
-                result = await ai_service.extract_invoice_info(file_path)
+                result = await ai_service.extract_invoice_info(file_path, self._report_progress)
                 result["source_file"] = file_path
                 result["status"] = "normal"
                 result["is_duplicate"] = False

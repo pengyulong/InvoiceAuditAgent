@@ -7,6 +7,7 @@ from app.api.v1 import audit as audit_api, auth, upload, results
 from app.core.auth import get_current_user, verify_access_token
 from app.core.database import init_db
 from app.services.websocket_service import websocket_manager
+from app.services.audit_service import audit_service
 # 确保导入所有模型以便创建数据库表
 from app.models import audit as audit_model
 import logging
@@ -81,6 +82,26 @@ async def websocket_endpoint(websocket: WebSocket, audit_id: str):
         return
 
     connection_id = await websocket_manager.connect(websocket, audit_id)
+
+    # 连接后立即发送当前审计状态（解决前端连接延迟导致错过初始消息的问题）
+    try:
+        state = audit_service.active_tasks.get(audit_id, {})
+        if state and state.get("status") == "running":
+            status_info = await audit_service.get_audit_status(audit_id)
+            cur_step = state.get("current_step", "未知")
+            cur_progress = state.get("progress", 0)
+            await websocket_manager.send_progress(audit_id, {
+                "progress": cur_progress,
+                "current_step": cur_step,
+                "step_id": "reconnect",
+                "step_name": cur_step,
+                "message": f"已恢复连接，当前进度: {cur_progress}%"
+            })
+            await websocket_manager.send_log(audit_id,
+                f"审计已在进行中 - 当前步骤: {cur_step}, 进度: {cur_progress}%", "info")
+    except Exception as e:
+        logger.warning(f"发送初始状态失败: {e}")
+
     try:
         while True:
             data = await websocket.receive_text()
