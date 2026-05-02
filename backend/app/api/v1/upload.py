@@ -278,6 +278,78 @@ async def upload_contract(
         raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
 
 
+@router.post("/invoice-batch", summary="批量上传发票文件（发票识别模式）")
+async def upload_invoice_batch(
+    files: List[UploadFile] = File(...),
+    task_name: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    批量上传发票文件用于独立发票识别（不需要合同）
+
+    - **files**: 发票文件列表（PDF、JPG、PNG）
+    - **task_name**: 可选的任务名称
+    """
+    if len(files) == 0:
+        raise HTTPException(status_code=400, detail="请至少上传一个文件")
+    if len(files) > 50:
+        raise HTTPException(status_code=400, detail="单次最多上传50个文件")
+
+    try:
+        task_id = str(uuid.uuid4())
+        task_dir = Path(settings.upload_dir) / task_id
+        extracted_dir = task_dir / "extracted"
+        extracted_dir.mkdir(parents=True, exist_ok=True)
+
+        uploaded_files = []
+        file_paths = []
+
+        for file in files:
+            if not file.filename.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
+                continue
+
+            safe_name = f"{str(uuid.uuid4())[:8]}_{file.filename}"
+            file_path = extracted_dir / safe_name
+
+            async with aiofiles.open(file_path, 'wb') as f:
+                content = await file.read()
+                await f.write(content)
+
+            file_info = await file_service.analyze_file(file_path)
+            uploaded_files.append(file_info)
+            file_paths.append(str(file_path))
+
+        task = AuditTask(
+            id=task_id,
+            name=task_name or f"发票识别-{task_id[:8]}",
+            status="pending",
+            total_files=len(uploaded_files),
+            file_path=str(extracted_dir),
+            result_data={"file_paths": file_paths},
+        )
+
+        db.add(task)
+        await db.commit()
+        await db.refresh(task)
+
+        return {
+            "task_id": task_id,
+            "message": f"成功上传{len(uploaded_files)}个发票文件",
+            "files": uploaded_files,
+            "file_count": len(uploaded_files),
+            "task": {
+                "id": task.id,
+                "name": task.name,
+                "status": task.status,
+                "total_files": task.total_files,
+            },
+        }
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
+
+
 @router.post("/invoices", summary="批量上传发票文件")
 async def upload_invoices(
     files: List[UploadFile] = File(...),
@@ -327,6 +399,45 @@ async def upload_invoices(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
+
+
+@router.get("/preview", summary="预览文件")
+async def preview_file(path: str):
+    """
+    预览上传的文件（PDF/图片），返回文件内容供浏览器直接渲染
+
+    - **path**: 文件的绝对路径（由上传接口返回的 path 字段）
+    """
+    try:
+        file_path = Path(path).resolve()
+        upload_dir = Path(settings.upload_dir).resolve()
+
+        # 安全检查：确保文件在允许的目录内（防路径穿越）
+        if upload_dir not in file_path.parents and file_path != upload_dir:
+            raise HTTPException(status_code=403, detail="禁止访问该路径")
+
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="文件不存在")
+
+        ext = file_path.suffix.lower()
+        media_types = {
+            ".pdf": "application/pdf",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".png": "image/png",
+        }
+        media_type = media_types.get(ext, "application/octet-stream")
+
+        return FileResponse(
+            path=str(file_path),
+            media_type=media_type,
+            headers={"Content-Disposition": "inline"},
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"预览文件失败: {str(e)}")
 
 
 @router.get("/file/{file_id}/info", summary="获取文件信息")

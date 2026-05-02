@@ -49,6 +49,40 @@ const router = createRouter({
       ]
     },
     {
+      path: '/invoice',
+      name: 'Invoice',
+      redirect: '/invoice/upload',
+      meta: {
+        title: '发票识别'
+      },
+      children: [
+        {
+          path: 'upload',
+          name: 'InvoiceUpload',
+          component: () => import('@/views/Invoice/Upload.vue'),
+          meta: {
+            title: '发票上传'
+          }
+        },
+        {
+          path: 'processing/:taskId?',
+          name: 'InvoiceProcessing',
+          component: () => import('@/views/Invoice/Processing.vue'),
+          meta: {
+            title: '识别进度'
+          }
+        },
+        {
+          path: 'results/:taskId',
+          name: 'InvoiceResults',
+          component: () => import('@/views/Invoice/Results.vue'),
+          meta: {
+            title: '识别结果'
+          }
+        }
+      ]
+    },
+    {
       path: '/results/:auditId?',
       name: 'Results',
       component: () => import('@/views/Results/index.vue'),

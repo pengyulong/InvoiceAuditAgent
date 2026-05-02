@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
-from app.api.v1 import audit as audit_api, auth, upload, results
+from app.api.v1 import audit as audit_api, auth, upload, results, ocr
 from app.core.auth import get_current_user, verify_access_token
 from app.core.database import init_db
 from app.services.websocket_service import websocket_manager
@@ -67,6 +67,7 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["登录认证"])
 app.include_router(audit_api.router, prefix="/api/v1/audit", tags=["审计"], dependencies=[Depends(get_current_user)])
 app.include_router(upload.router, prefix="/api/v1/upload", tags=["文件上传"], dependencies=[Depends(get_current_user)])
 app.include_router(results.router, prefix="/api/v1/results", tags=["结果查询"], dependencies=[Depends(get_current_user)])
+app.include_router(ocr.router, prefix="/api/v1/ocr", tags=["发票识别"], dependencies=[Depends(get_current_user)])
 
 # WebSocket路由
 @app.websocket("/ws/audit/{audit_id}")

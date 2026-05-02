@@ -208,12 +208,23 @@
                   <div class="invoice-header">
                     <div class="invoice-info">
                       <h4 class="invoice-number">{{ invoice.invoice_number }}</h4>
-                      <el-tag
-                        :type="getInvoiceStatusType(invoice.status)"
-                        size="small"
-                      >
-                        {{ getInvoiceStatusText(invoice.status) }}
-                      </el-tag>
+                      <div class="invoice-tags">
+                        <el-tag
+                          :type="getInvoiceStatusType(invoice.status)"
+                          size="small"
+                        >
+                          {{ getInvoiceStatusText(invoice.status) }}
+                        </el-tag>
+                        <el-button
+                          v-if="invoice.path || invoice.source_file"
+                          circle
+                          size="small"
+                          class="preview-btn"
+                          @click="openPreview(invoice)"
+                        >
+                          <el-icon><View /></el-icon>
+                        </el-button>
+                      </div>
                     </div>
                     <div class="invoice-amount">
                       <span class="amount-label">金额:</span>
@@ -371,6 +382,14 @@
               </el-button>
 
               <el-button
+                type="warning"
+                @click="exportInvoiceExcel"
+                :loading="isExportingInvoiceExcel"
+              >
+                导出发票Excel
+              </el-button>
+
+              <el-button
                 type="info"
                 @click="exportJSON"
                 :loading="isExportingJSON"
@@ -443,6 +462,14 @@
           <el-button @click="closeShareDialog">关闭</el-button>
         </template>
       </el-dialog>
+
+      <!-- 文件预览弹窗 -->
+      <FilePreviewDialog
+        v-model="previewDialogVisible"
+        :file-path="previewFilePath"
+        :file-name="previewFileName"
+        :file-type="previewFileType"
+      />
     </div>
 
     <!-- 加载状态 -->
@@ -477,10 +504,12 @@ import {
   Check,
   Close,
   SuccessFilled,
-  InfoFilled as InfoIcon
+  InfoFilled as InfoIcon,
+  View
 } from '@element-plus/icons-vue'
 import { useAuditStore } from '@/stores/audit'
 import { apiService } from '@/services/api'
+import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -498,6 +527,7 @@ const issueFilter = ref('')
 // 操作状态
 const isExportingPDF = ref(false)
 const isExportingExcel = ref(false)
+const isExportingInvoiceExcel = ref(false)
 const isExportingJSON = ref(false)
 const isGeneratingShare = ref(false)
 const isReAuditing = ref(false)
@@ -506,6 +536,19 @@ const isReAuditing = ref(false)
 const shareDialogVisible = ref(false)
 const shareLink = ref('')
 const sharePassword = ref('')
+
+// 文件预览
+const previewDialogVisible = ref(false)
+const previewFilePath = ref('')
+const previewFileName = ref('')
+const previewFileType = ref('')
+
+const openPreview = (file: any) => {
+  previewFilePath.value = file.path || file.source_file || ''
+  previewFileName.value = file.name || file.source_file?.split('/').pop() || '文件预览'
+  previewFileType.value = file.type || file.file_type || ''
+  previewDialogVisible.value = true
+}
 
 // 计算属性
 const filteredInvoices = computed(() => {
@@ -726,6 +769,18 @@ const exportExcel = async () => {
     ElMessage.error('导出Excel失败: ' + (error.message || '未知错误'))
   } finally {
     isExportingExcel.value = false
+  }
+}
+
+const exportInvoiceExcel = async () => {
+  try {
+    isExportingInvoiceExcel.value = true
+    await apiService.download(`/results/${auditId.value}/export/invoice-excel`, `invoice_report_${auditId.value}.xlsx`)
+    ElMessage.success('发票Excel导出成功')
+  } catch (error: any) {
+    ElMessage.error('导出发票Excel失败: ' + (error.message || '未知错误'))
+  } finally {
+    isExportingInvoiceExcel.value = false
   }
 }
 
@@ -1160,6 +1215,21 @@ onMounted(() => {
   font-weight: 600;
   color: #303133;
   margin-bottom: 4px;
+}
+
+.invoice-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-btn {
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.preview-btn:hover {
+  opacity: 1;
 }
 
 .invoice-amount {

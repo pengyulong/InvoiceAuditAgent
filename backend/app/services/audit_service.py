@@ -239,7 +239,7 @@ class AuditService:
             "status": "completed",
             "summary": result.get("summary", {}),
             "contract_info": result.get("contract_info"),
-            "invoices": result.get("invoice_list", []),
+            "invoices": result.get("invoices", result.get("invoice_list", [])),
             "issues": result.get("issues", []),
             "comparisons": result.get("comparisons", []),
         }

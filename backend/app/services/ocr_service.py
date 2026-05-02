@@ -1,0 +1,202 @@
+"""OCR识别服务 - 批量发票OCR识别"""
+import asyncio
+import logging
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, Optional, List
+
+from app.core.database import AsyncSessionLocal
+from app.models.audit import AuditTask
+from app.services.websocket_service import websocket_manager
+
+logger = logging.getLogger(__name__)
+
+
+class OcrService:
+    """OCR识别服务，管理发票识别任务的生命周期"""
+
+    def __init__(self):
+        self.active_tasks: Dict[str, Dict[str, Any]] = {}
+
+    async def execute_ocr(self, task_id: str, file_paths: List[str]):
+        """执行批量OCR识别"""
+        start_time = time.time()
+
+        try:
+            logger.info(f"开始OCR识别任务: {task_id}, 文件数: {len(file_paths)}")
+            self.active_tasks[task_id] = {
+                "status": "running",
+                "progress": 0,
+                "current_step": "初始化",
+                "start_time": start_time,
+                "total_files": len(file_paths),
+                "processed_files": 0,
+            }
+
+            await websocket_manager.send_progress(task_id, {
+                "progress": 0,
+                "current_step": "启动识别",
+                "step_id": "init",
+                "message": f"正在初始化OCR识别，共 {len(file_paths)} 个文件",
+            })
+            await websocket_manager.send_log(task_id,
+                f"开始OCR识别 - 共 {len(file_paths)} 个发票文件", "info")
+
+            from app.services.ai_service import ai_service
+
+            results = []
+            total = len(file_paths)
+
+            for i, file_path in enumerate(file_paths):
+                file_name = Path(file_path).name
+                progress_pct = int((i / total) * 100) if total > 0 else 0
+                step_name = f"识别发票 ({i + 1}/{total})"
+
+                self.active_tasks[task_id].update({
+                    "progress": progress_pct,
+                    "current_step": step_name,
+                    "processed_files": i,
+                })
+
+                await websocket_manager.send_progress(task_id, {
+                    "progress": progress_pct,
+                    "current_step": step_name,
+                    "step_id": "ocr_processing",
+                    "message": f"正在识别: {file_name} ({i + 1}/{total})",
+                })
+                await websocket_manager.send_log(task_id,
+                    f"[{i + 1}/{total}] 开始识别: {file_name}", "info")
+
+                try:
+                    async def ocr_progress(agent_name, pct, msg):
+                        await websocket_manager.send_log(task_id, msg, "info")
+
+                    result = await ai_service.extract_invoice_info(file_path, ocr_progress)
+                    result["source_file"] = file_path
+                    result["file_name"] = file_name
+                    results.append(result)
+
+                    await websocket_manager.send_log(task_id,
+                        f"[{i + 1}/{total}] 识别完成: {file_name} "
+                        f"(发票号码: {result.get('invoice_number', '未识别')})", "success")
+
+                except Exception as e:
+                    logger.error(f"识别发票失败: {file_path}, {e}")
+                    results.append({
+                        "source_file": file_path,
+                        "file_name": file_name,
+                        "error": str(e),
+                        "invoice_number": "识别失败",
+                    })
+                    await websocket_manager.send_log(task_id,
+                        f"[{i + 1}/{total}] 识别失败: {file_name} - {e}", "error")
+
+            elapsed = time.time() - start_time
+            success_count = sum(1 for r in results if "error" not in r)
+
+            result_data = {
+                "invoices": results,
+                "total_count": len(results),
+                "success_count": success_count,
+                "fail_count": len(results) - success_count,
+                "processing_time": round(elapsed, 1),
+            }
+
+            self.active_tasks[task_id].update({
+                "status": "completed",
+                "progress": 100,
+                "current_step": "完成",
+                "result": result_data,
+                "elapsed": elapsed,
+                "processed_files": total,
+            })
+
+            await self._persist_result(task_id, result_data, elapsed)
+
+            await websocket_manager.send_progress(task_id, {
+                "progress": 100,
+                "step_id": "completed",
+                "current_step": "识别完成",
+                "message": f"OCR识别完成 - 成功 {success_count}/{total}，耗时 {elapsed:.1f} 秒",
+            })
+            await websocket_manager.send_completed(task_id, {
+                "task_id": task_id,
+                "status": "completed",
+                "summary": {
+                    "total": total,
+                    "success": success_count,
+                    "fail": len(results) - success_count,
+                    "elapsed": elapsed,
+                },
+            })
+
+            logger.info(f"OCR识别完成: {task_id}, 耗时 {elapsed:.1f}s")
+
+        except Exception as e:
+            await self._handle_failure(task_id, str(e), start_time)
+
+    async def _handle_failure(self, task_id: str, error: str, start_time: float):
+        elapsed = time.time() - start_time
+        self.active_tasks[task_id] = {
+            "status": "failed",
+            "progress": 0,
+            "error": error,
+            "elapsed": elapsed,
+        }
+        await self._persist_result(task_id, {"error": error}, elapsed, status="failed")
+        await websocket_manager.send_error(task_id, {
+            "error": error,
+            "message": "OCR识别任务执行失败",
+            "elapsed": elapsed,
+        })
+        logger.error(f"OCR识别失败: {task_id}, 错误: {error}")
+
+    async def _persist_result(
+        self,
+        task_id: str,
+        result_data: Dict[str, Any],
+        elapsed: float,
+        status: str = "completed",
+    ):
+        try:
+            async with AsyncSessionLocal() as session:
+                task = await session.get(AuditTask, task_id)
+                if task:
+                    task.status = status
+                    task.progress = 100 if status == "completed" else 0
+                    task.result_data = result_data
+                    task.completed_at = datetime.utcnow()
+                    await session.commit()
+        except Exception as e:
+            logger.error(f"保存OCR结果失败: {task_id}, {e}")
+
+    async def get_ocr_status(self, task_id: str) -> Dict[str, Any]:
+        """获取OCR任务状态"""
+        state = self.active_tasks.get(task_id)
+        if not state:
+            return {"status": "unknown", "progress": 0, "current_step": "未知"}
+        return {
+            "status": state.get("status"),
+            "progress": state.get("progress", 0),
+            "current_step": state.get("current_step", "未知"),
+            "total_files": state.get("total_files", 0),
+            "processed_files": state.get("processed_files", 0),
+        }
+
+    async def get_ocr_results(self, task_id: str) -> Dict[str, Any]:
+        """获取OCR识别结果"""
+        state = self.active_tasks.get(task_id, {})
+        result = state.get("result")
+        if result:
+            return {"task_id": task_id, "status": state.get("status", "completed"), **result}
+
+        async with AsyncSessionLocal() as session:
+            task = await session.get(AuditTask, task_id)
+            if task and task.result_data:
+                return {"task_id": task_id, "status": task.status, **task.result_data}
+
+        return {"task_id": task_id, "status": "unknown", "invoices": []}
+
+
+ocr_service = OcrService()

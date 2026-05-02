@@ -35,7 +35,9 @@ class ContractAnalyzer(BaseAgent):
             )
 
             try:
-                result = await ai_service.extract_contract_info(file_path, self._report_progress)
+                async def _cb(_name, pct, msg):
+                    await self._report_progress(pct, msg)
+                result = await ai_service.extract_contract_info(file_path, _cb)
                 result["source_file"] = file_path
                 all_results.append(result)
                 logger.info(f"合同分析完成: {file_path}, 置信度={result.get('confidence_score', 0)}")

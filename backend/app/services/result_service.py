@@ -271,7 +271,12 @@ class ResultService:
                 ws2.cell(row=i, column=1, value=label).font = Font(bold=True)
                 val = contract.get(key, "-")
                 if key == "tax_rate":
-                    val = f"{(val or 0) * 100:.0f}%"
+                    try:
+                        if isinstance(val, str):
+                            val = float(val.replace("%", ""))
+                        val = f"{(val or 0) * 100:.0f}%"
+                    except (ValueError, TypeError):
+                        val = str(val)
                 elif key == "total_amount":
                     val = f"¥{(val or 0):,.2f}"
                 ws2.cell(row=i, column=2, value=str(val))
@@ -324,6 +329,105 @@ class ResultService:
 
         except ImportError:
             logger.warning("openpyxl未安装，生成简化Excel")
+            with open(excel_path, "w", encoding="utf-8") as f:
+                f.write(self._text_report(result))
+
+        return excel_path
+
+    async def generate_invoice_excel(self, task_id: str) -> str:
+        """生成发票识别Excel（单sheet，仅发票字段）"""
+        result = await self.get_result_details(task_id)
+        if not result:
+            raise ValueError("审计结果不存在")
+
+        os.makedirs("uploads/reports", exist_ok=True)
+        excel_path = f"uploads/reports/invoice_report_{task_id}.xlsx"
+
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "发票信息"
+
+            thin_border = Border(
+                left=Side(style="thin"), right=Side(style="thin"),
+                top=Side(style="thin"), bottom=Side(style="thin"),
+            )
+            header_fill = PatternFill(start_color="3355CC", end_color="3355CC", fill_type="solid")
+            header_font = Font(color="FFFFFF", bold=True, size=11)
+            header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+            headers = [
+                "发票号码", "开票日期", "销售方", "购买方",
+                "价税合计", "税额", "不含税金额", "税率",
+                "商品清单", "置信度", "来源文件"
+            ]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.border = thin_border
+                cell.alignment = header_align
+
+            invoices = result.get("invoices", []) or result.get("invoice_list", [])
+            for i, inv in enumerate(invoices, 2):
+                product_list = inv.get("product_list") or []
+                if isinstance(product_list, list) and product_list:
+                    items = []
+                    for p in product_list:
+                        if isinstance(p, dict):
+                            name = p.get("name", "")
+                            qty = p.get("quantity", "")
+                            items.append(f"{name} x{qty}" if qty else name)
+                    product_text = "; ".join(items)
+                else:
+                    product_text = "-"
+
+                tax_rate = inv.get("tax_rate")
+                if tax_rate is not None:
+                    try:
+                        if isinstance(tax_rate, str):
+                            tax_rate = tax_rate.replace("%", "")
+                        tax_rate_val = float(tax_rate)
+                        tax_rate_text = f"{tax_rate_val * 100:.0f}%" if tax_rate_val < 1 else f"{tax_rate_val:.0f}%"
+                    except (ValueError, TypeError):
+                        tax_rate_text = str(tax_rate)
+                else:
+                    tax_rate_text = "-"
+
+                source = inv.get("source_file", inv.get("_source", "-"))
+
+                row_data = [
+                    inv.get("invoice_number") or "-",
+                    inv.get("invoice_date") or "-",
+                    inv.get("seller_name") or "-",
+                    inv.get("buyer_name") or "-",
+                    inv.get("total_amount") or 0,
+                    inv.get("tax_amount") or 0,
+                    inv.get("amount_without_tax") or 0,
+                    tax_rate_text,
+                    product_text,
+                    (inv.get("confidence_score") or 0),
+                    source,
+                ]
+                for col, val in enumerate(row_data, 1):
+                    cell = ws.cell(row=i, column=col, value=val)
+                    cell.border = thin_border
+                    if col == 10:
+                        cell.number_format = '0.0%'
+
+            # 列宽自适应
+            col_widths = [18, 14, 22, 22, 14, 14, 14, 10, 40, 10, 30]
+            for col, w in enumerate(col_widths, 1):
+                ws.column_dimensions[ws.cell(row=1, column=col).column_letter].width = w
+
+            wb.save(excel_path)
+            logger.info(f"发票Excel生成成功: {excel_path}")
+
+        except ImportError:
+            logger.warning("openpyxl未安装，生成简化发票Excel")
             with open(excel_path, "w", encoding="utf-8") as f:
                 f.write(self._text_report(result))
 

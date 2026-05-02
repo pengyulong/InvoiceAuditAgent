@@ -5,18 +5,73 @@
       <div class="hero-content">
         <h1 class="hero-title">AI驱动的智能审计解决方案</h1>
         <p class="hero-subtitle">
-          通过先进的多模态大模型技术，自动化审计采购合同与发票的匹配性、合规性和准确性
+          通过先进的AI技术，自动化识别发票信息、审计采购合同与发票的匹配性
         </p>
-        <el-button
-          type="primary"
-          size="large"
-          class="cta-button"
-          @click="startAudit"
-        >
-          <span class="mr-2">▶️</span>
-          开始审计
-        </el-button>
       </div>
+    </section>
+
+    <!-- 双入口卡片 -->
+    <section class="entry-section">
+      <div class="section-header">
+        <h2 class="section-title">选择服务模式</h2>
+        <p class="section-subtitle">根据您的需求选择合适的处理方式</p>
+      </div>
+
+      <el-row :gutter="32" class="entry-cards">
+        <!-- 发票识别 -->
+        <el-col :lg="12" :md="24" :sm="24">
+          <el-card class="entry-card invoice-card" shadow="hover">
+            <div class="entry-content">
+              <div class="entry-icon invoice-icon">🧾</div>
+              <h3 class="entry-title">发票识别</h3>
+              <p class="entry-description">
+                快速提取发票关键信息，支持批量识别和Excel导出
+              </p>
+              <ul class="entry-features">
+                <li>支持 PDF / JPG / PNG 多格式发票上传</li>
+                <li>批量识别，自动提取发票号码、金额、税率等</li>
+                <li>识别结果支持导出为 Excel / JSON 格式</li>
+                <li>支持增值税发票、普通发票等多种类型</li>
+              </ul>
+              <el-button
+                type="primary"
+                size="large"
+                class="entry-button"
+                @click="goToInvoice"
+              >
+                开始发票识别
+              </el-button>
+            </div>
+          </el-card>
+        </el-col>
+
+        <!-- 合同审计 -->
+        <el-col :lg="12" :md="24" :sm="24">
+          <el-card class="entry-card audit-card" shadow="hover">
+            <div class="entry-content">
+              <div class="entry-icon audit-icon">📋</div>
+              <h3 class="entry-title">合同审计</h3>
+              <p class="entry-description">
+                智能比对合同与发票，自动检测差异和风险
+              </p>
+              <ul class="entry-features">
+                <li>上传合同 + 发票 ZIP 压缩包，自动分类解析</li>
+                <li>AI 智能比对金额、税率、商品清单等关键信息</li>
+                <li>自动检测重复发票、金额不符等异常问题</li>
+                <li>生成详细审计报告，支持 PDF / Excel 导出</li>
+              </ul>
+              <el-button
+                type="success"
+                size="large"
+                class="entry-button"
+                @click="goToAudit"
+              >
+                开始合同审计
+              </el-button>
+            </div>
+          </el-card>
+        </el-col>
+      </el-row>
     </section>
 
     <!-- Features Section -->
@@ -72,11 +127,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-// import { Play, Robot, DataAnalysis, Shield, Document, TrendCharts } from '@element-plus/icons-vue'
-import { useAuditStore } from '@/stores/audit'
 
 const router = useRouter()
-const auditStore = useAuditStore()
 
 const features = ref([
   {
@@ -90,7 +142,7 @@ const features = ref([
     id: 2,
     icon: '📊',
     title: '智能分析',
-    description: '利用多模态大模型理解合同和发票图像内容',
+    description: '利用AI模型理解合同和发票图像内容',
     color: '#67C23A'
   },
   {
@@ -133,7 +185,11 @@ const statistics = ref([
   }
 ])
 
-const startAudit = () => {
+const goToInvoice = () => {
+  router.push('/invoice/upload')
+}
+
+const goToAudit = () => {
   router.push('/audit/upload')
 }
 
@@ -150,7 +206,7 @@ onMounted(() => {
 .hero-section {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  padding: 120px 0;
+  padding: 100px 0 80px;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -186,30 +242,118 @@ onMounted(() => {
 .hero-subtitle {
   font-size: 20px;
   line-height: 1.6;
-  margin-bottom: 40px;
   opacity: 0.9;
   max-width: 600px;
-  margin-left: auto;
-  margin-right: auto;
+  margin: 0 auto;
 }
 
-.cta-button {
-  font-size: 18px;
-  padding: 16px 32px;
-  height: auto;
-  border-radius: 50px;
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+/* 双入口卡片 */
+.entry-section {
+  padding: 80px 0 0;
+}
+
+.entry-cards {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.entry-card {
+  margin-bottom: 24px;
+  border-radius: 16px;
+  border: none;
   transition: all 0.3s ease;
+  height: 100%;
 }
 
-.cta-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.3);
+.entry-card:hover {
+  transform: translateY(-8px);
 }
 
-.features-section,
-.stats-section {
-  padding: 80px 0;
+.invoice-card {
+  border-top: 4px solid #409EFF;
+}
+
+.invoice-card:hover {
+  box-shadow: 0 20px 40px rgba(64, 158, 255, 0.15);
+}
+
+.audit-card {
+  border-top: 4px solid #67C23A;
+}
+
+.audit-card:hover {
+  box-shadow: 0 20px 40px rgba(103, 194, 58, 0.15);
+}
+
+.entry-content {
+  text-align: center;
+  padding: 32px 24px;
+}
+
+.entry-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  margin: 0 auto 24px;
+}
+
+.invoice-icon {
+  background: linear-gradient(135deg, #ECF5FF, #D9ECFF);
+}
+
+.audit-icon {
+  background: linear-gradient(135deg, #F0F9FF, #E1F3D8);
+}
+
+.entry-title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #303133;
+  margin-bottom: 12px;
+}
+
+.entry-description {
+  font-size: 16px;
+  color: #606266;
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+
+.entry-features {
+  text-align: left;
+  margin: 0 auto 32px;
+  padding: 0;
+  list-style: none;
+  max-width: 360px;
+}
+
+.entry-features li {
+  position: relative;
+  padding: 8px 0 8px 28px;
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.entry-features li::before {
+  content: '✓';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  color: #67C23A;
+  font-weight: 700;
+}
+
+.entry-button {
+  min-width: 200px;
+  height: 48px;
+  font-size: 16px;
+  border-radius: 50px;
 }
 
 .section-header {
@@ -228,6 +372,11 @@ onMounted(() => {
   font-size: 18px;
   color: #606266;
   line-height: 1.6;
+}
+
+.features-section,
+.stats-section {
+  padding: 80px 0;
 }
 
 .features-grid,
@@ -319,6 +468,14 @@ onMounted(() => {
     font-size: 18px;
   }
 
+  .entry-content {
+    padding: 24px 16px;
+  }
+
+  .entry-title {
+    font-size: 24px;
+  }
+
   .section-title {
     font-size: 28px;
   }
@@ -326,6 +483,10 @@ onMounted(() => {
   .feature-card {
     height: 240px;
     margin-bottom: 16px;
+  }
+
+  .entry-button {
+    min-width: 160px;
   }
 }
 </style>

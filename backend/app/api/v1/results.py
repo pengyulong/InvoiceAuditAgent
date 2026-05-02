@@ -211,6 +211,35 @@ async def export_excel_report(
         raise HTTPException(status_code=500, detail=f"导出Excel报告失败: {str(e)}")
 
 
+@router.get("/{audit_id}/export/invoice-excel", summary="导出发票Excel")
+@router.post("/{audit_id}/export/invoice-excel", summary="导出发票Excel")
+async def export_invoice_excel(
+    audit_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    导出仅包含发票信息的Excel文件（适用于发票识别结果导出）
+
+    - **audit_id**: 审计ID
+    """
+    try:
+        excel_path = await result_service.generate_invoice_excel(audit_id)
+
+        if not os.path.exists(excel_path):
+            raise HTTPException(status_code=500, detail="发票Excel生成失败")
+
+        return FileResponse(
+            path=excel_path,
+            filename=f"invoice_report_{audit_id}.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"导出发票Excel失败: {str(e)}")
+
+
 @router.get("/{audit_id}/export/json", summary="导出JSON数据")
 @router.post("/{audit_id}/export/json", summary="导出JSON数据")
 async def export_json_data(

@@ -126,6 +126,14 @@
                       >
                         {{ getCategoryLabel(file.category) }}
                       </el-tag>
+                      <el-button
+                        circle
+                        size="small"
+                        class="preview-btn"
+                        @click="openPreview(file)"
+                      >
+                        <el-icon><View /></el-icon>
+                      </el-button>
                     </div>
                   </div>
                 </div>
@@ -154,6 +162,14 @@
               </el-button>
             </div>
           </el-card>
+
+          <!-- 文件预览弹窗 -->
+          <FilePreviewDialog
+            v-model="previewDialogVisible"
+            :file-path="previewFilePath"
+            :file-name="previewFileName"
+            :file-type="previewFileType"
+          />
         </el-col>
 
         <!-- 右侧：说明面板 -->
@@ -287,6 +303,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 // } from '@element-plus/icons-vue'
 import { useAuditStore, type FileInfo } from '@/stores/audit'
 import { apiService } from '@/services/api'
+import FilePreviewDialog from '@/components/FilePreviewDialog.vue'
+import { View } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const auditStore = useAuditStore()
@@ -300,6 +318,19 @@ const errorMessage = ref('')
 const extractedFiles = ref<FileInfo[]>([])
 const isStartingAudit = ref(false)
 const uploadHistory = ref<any[]>([])
+
+// 文件预览
+const previewDialogVisible = ref(false)
+const previewFilePath = ref('')
+const previewFileName = ref('')
+const previewFileType = ref('')
+
+const openPreview = (file: FileInfo) => {
+  previewFilePath.value = file.path || ''
+  previewFileName.value = file.name
+  previewFileType.value = file.type || ''
+  previewDialogVisible.value = true
+}
 
 // 计算属性
 const contractCount = computed(() => extractedFiles.value.filter(file => file.category === 'contract').length)
@@ -757,6 +788,16 @@ const formatTime = (date: Date): string => {
   flex: 1;
   font-size: 13px;
   color: #303133;
+}
+
+.preview-btn {
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  margin-left: auto;
+}
+
+.preview-btn:hover {
+  opacity: 1;
 }
 
 .action-buttons {
