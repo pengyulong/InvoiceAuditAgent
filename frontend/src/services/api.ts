@@ -168,6 +168,10 @@ class ApiService {
     const response = await this.instance.post(url, formData, {
       timeout: config?.timeout ?? 10 * 60 * 1000,
       ...config,
+      headers: {
+        ...(config?.headers || {}),
+        'Content-Type': 'multipart/form-data'
+      },
       onUploadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)
