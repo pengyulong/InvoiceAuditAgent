@@ -6,6 +6,7 @@ import asyncio
 import logging
 import json
 import aiohttp
+import shutil
 from typing import Dict, Any, List, Optional
 from PIL import Image
 import base64
@@ -493,41 +494,52 @@ OCR识别的文字：
         logger.info(f"开始提取发票信息: {image_path}")
 
         try:
-            if not self.baidu_client:
-                raise AIServiceError("百度OCR客户端未初始化")
+            raw_text = ""
+            parsed_result: Dict[str, Any] = {}
+            cloud_ocr_error: Optional[str] = None
 
-            # Step 1: 尝试百度增值税发票专用接口
-            if progress_callback:
-                await progress_callback("invoice_analyzer", 10, "正在进行增值税发票识别...")
-            vat_result = None
-            async with self.baidu_client:
-                vat_result = await self.baidu_client.recognize_vat_invoice(image_path)
+            # Step 1: 优先尝试百度增值税发票专用接口
+            if self.baidu_client:
+                try:
+                    if progress_callback:
+                        await progress_callback("invoice_analyzer", 10, "正在进行增值税发票识别...")
+                    async with self.baidu_client:
+                        vat_result = await self.baidu_client.recognize_vat_invoice(image_path)
 
-            # 检查增值税发票识别结果
-            if vat_result and "words_result" in str(vat_result):
-                # 增值税发票专用解析
-                parsed = self._parse_vat_invoice_result(vat_result)
-                if parsed and parsed.get("invoice_number"):
-                    logger.info("使用百度增值税发票专用接口识别成功")
-                    return parsed
+                    if vat_result and "words_result" in str(vat_result):
+                        parsed = self._parse_vat_invoice_result(vat_result)
+                        if parsed and parsed.get("invoice_number"):
+                            logger.info("使用百度增值税发票专用接口识别成功")
+                            return parsed
+                except AIServiceError as e:
+                    cloud_ocr_error = str(e)
+                    logger.warning(f"百度增值税发票OCR不可用，切换本地OCR: {e}")
 
-            # Step 2: 通用文字识别 + DeepSeek结构化
-            if progress_callback:
-                await progress_callback("invoice_analyzer", 40, "正在进行通用OCR文字识别...")
-            async with self.baidu_client:
-                raw_text = await self.baidu_client.recognize_text(image_path, use_high_accuracy=True)
+                # Step 2: 通用文字识别
+                try:
+                    if progress_callback:
+                        await progress_callback("invoice_analyzer", 40, "正在进行云端OCR文字识别...")
+                    async with self.baidu_client:
+                        raw_text = await self.baidu_client.recognize_text(image_path, use_high_accuracy=True)
+                except AIServiceError as e:
+                    cloud_ocr_error = str(e)
+                    logger.warning(f"云端OCR失败，切换本地OCR: {e}")
 
             if not raw_text.strip():
-                logger.warning(f"发票图片 {image_path} 未提取到文字")
+                if progress_callback:
+                    await progress_callback("invoice_analyzer", 45, "正在使用本地OCR识别...")
+                raw_text = await self._recognize_invoice_text_local(image_path, progress_callback)
 
-            logger.info(f"百度OCR提取文字长度: {len(raw_text)}")
+            if not raw_text.strip():
+                raise AIServiceError(cloud_ocr_error or "OCR未提取到文字")
 
-            if not self.deepseek_client:
-                raise AIServiceError("DeepSeek客户端未初始化")
-            if progress_callback:
-                await progress_callback("invoice_analyzer", 70, "正在AI分析发票内容...")
+            logger.info(f"发票OCR提取文字长度: {len(raw_text)}")
 
-            prompt = f"""
+            if self.deepseek_client:
+                if progress_callback:
+                    await progress_callback("invoice_analyzer", 70, "正在AI分析发票内容...")
+
+                prompt = f"""
 请根据以下发票图片OCR识别的文字，提取结构化信息并以JSON格式返回。
 
 OCR识别的文字：
@@ -564,20 +576,228 @@ OCR识别的文字：
 
 如果某个字段无法识别，请设置为null。返回格式必须是有效的JSON。
 """
+                try:
+                    async with self.deepseek_client:
+                        result = await self.deepseek_client._make_request([
+                            {"role": "user", "content": prompt}
+                        ], max_tokens=2000)
 
-            async with self.deepseek_client:
-                result = await self.deepseek_client._make_request([
-                    {"role": "user", "content": prompt}
-                ], max_tokens=2000)
+                        content = result["choices"][0]["message"]["content"]
+                        parsed_result = self._parse_json_response(content)
+                except Exception as e:
+                    logger.warning(f"DeepSeek发票结构化失败，使用本地解析兜底: {e}")
 
-                content = result["choices"][0]["message"]["content"]
-                return self._parse_json_response(content)
+            if not parsed_result:
+                parsed_result = self._parse_invoice_text_locally(raw_text)
+
+            parsed_result.setdefault("_source", "local_ocr")
+            parsed_result.setdefault("raw_text_preview", raw_text[:2000])
+            return parsed_result
 
         except AIServiceError:
             raise
         except Exception as e:
             logger.error(f"发票信息提取失败: {e}")
             raise AIServiceError(f"发票信息提取失败: {e}")
+
+    async def _recognize_invoice_text_local(self, file_path: str, progress_callback=None) -> str:
+        """使用本地 pdftoppm + tesseract 识别发票文字"""
+        if not shutil.which("tesseract"):
+            raise AIServiceError("本地OCR工具tesseract未安装")
+        if not shutil.which("pdftoppm"):
+            raise AIServiceError("本地PDF转换工具pdftoppm未安装")
+
+        file_ext = os.path.splitext(file_path)[1].lower()
+        if file_ext != ".pdf":
+            if progress_callback:
+                await progress_callback("invoice_analyzer", 55, "正在本地识别图片...")
+            return await asyncio.to_thread(self._run_tesseract_ocr, file_path)
+
+        page_count = self._get_pdf_page_count(file_path)
+        page_limit = min(page_count or 1, settings.max_invoice_ocr_pages)
+        logger.info(f"发票PDF页数: {page_count}, OCR页数: {page_limit}")
+
+        texts: List[str] = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for page_no in range(1, page_limit + 1):
+                if progress_callback:
+                    await progress_callback(
+                        "invoice_analyzer",
+                        45 + int((page_no - 1) / max(page_limit, 1) * 20),
+                        f"正在本地识别第 {page_no} 页..."
+                    )
+
+                output_prefix = os.path.join(temp_dir, f"invoice_page_{page_no}")
+                result = subprocess.run(
+                    [
+                        "pdftoppm",
+                        "-png",
+                        "-singlefile",
+                        "-f",
+                        str(page_no),
+                        "-l",
+                        str(page_no),
+                        "-r",
+                        "200",
+                        file_path,
+                        output_prefix,
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
+                )
+                if result.returncode != 0:
+                    logger.warning(f"发票第 {page_no} 页转换失败: {result.stderr}")
+                    continue
+
+                image_path = f"{output_prefix}.png"
+                if not os.path.exists(image_path):
+                    logger.warning(f"发票第 {page_no} 页转换后图片不存在: {image_path}")
+                    continue
+
+                try:
+                    page_text = await asyncio.to_thread(self._run_tesseract_ocr, image_path)
+                except Exception as e:
+                    logger.warning(f"发票第 {page_no} 页本地OCR失败: {e}")
+                    continue
+
+                if page_text.strip():
+                    texts.append(f"【第 {page_no} 页】\n{page_text.strip()}")
+                    if self._invoice_text_has_enough_fields("\n".join(texts)):
+                        break
+
+        return "\n\n".join(texts)
+
+    def _run_tesseract_ocr(self, image_path: str) -> str:
+        """执行 tesseract OCR"""
+        lang = self._detect_tesseract_lang()
+        command = [
+            "tesseract",
+            image_path,
+            "stdout",
+            "-l",
+            lang,
+            "--psm",
+            "6",
+        ]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            raise AIServiceError(f"本地OCR失败: {result.stderr.strip() or result.stdout.strip() or '未知错误'}")
+        return result.stdout.strip()
+
+    @staticmethod
+    def _detect_tesseract_lang() -> str:
+        """优先使用中文语言包，否则回退到英文"""
+        try:
+            result = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=10)
+            langs = {line.strip() for line in result.stdout.splitlines() if line.strip() and not line.startswith("List of available")}
+            if "chi_sim" in langs and "eng" in langs:
+                return "chi_sim+eng"
+            if "chi_sim" in langs:
+                return "chi_sim"
+        except Exception:
+            pass
+        return "eng"
+
+    @staticmethod
+    def _invoice_text_has_enough_fields(text: str) -> bool:
+        keywords = ["发票", "invoice", "价税合计", "税额", "购买方", "销售方", "发票号码"]
+        hit_count = sum(1 for kw in keywords if kw.lower() in text.lower())
+        return hit_count >= 3
+
+    def _parse_invoice_text_locally(self, raw_text: str) -> Dict[str, Any]:
+        """使用规则从OCR文本中提取发票字段"""
+        text = raw_text or ""
+        normalized = re.sub(r"[ \t]+", " ", text)
+        lower = normalized.lower()
+
+        invoice_number = self._match_first(
+            [
+                r"(?:发票号码|票号|号码|invoice\s*no\.?|invoice\s*number)[:：\s]*([A-Za-z0-9\-]{6,})",
+                r"(?:发票代码|代码)[:：\s]*([0-9]{10,20})",
+            ],
+            normalized,
+        )
+        invoice_date = self._match_first(
+            [
+                r"(?:开票日期|日期|invoice\s*date)[:：\s]*([0-9]{4}[年/\-.][0-9]{1,2}[月/\-.][0-9]{1,2}日?)",
+                r"([0-9]{4}-[0-9]{1,2}-[0-9]{1,2})",
+            ],
+            normalized,
+        )
+        total_amount = self._parse_amount(
+            self._match_first(
+                [
+                    r"(?:价税合计|合计|小写|总计)[:：\s]*[¥￥]?\s*([0-9,]+\.\d{2})",
+                    r"([0-9,]+\.\d{2})",
+                ],
+                normalized,
+            )
+            or "0"
+        )
+        tax_amount = self._parse_amount(
+            self._match_first(
+                [r"(?:税额)[:：\s]*[¥￥]?\s*([0-9,]+\.\d{2})"],
+                normalized,
+            )
+            or "0"
+        )
+        amount_without_tax = self._parse_amount(
+            self._match_first(
+                [r"(?:不含税|金额)[:：\s]*[¥￥]?\s*([0-9,]+\.\d{2})"],
+                normalized,
+            )
+            or "0"
+        )
+        tax_rate = self._parse_rate(
+            self._match_first(
+                [r"(?:税率)[:：\s]*([0-9.]+%?)"],
+                normalized,
+            )
+            or ""
+        )
+
+        confidence = 0.2
+        if invoice_number:
+            confidence += 0.2
+        if invoice_date:
+            confidence += 0.1
+        if total_amount > 0:
+            confidence += 0.2
+        if tax_rate is not None:
+            confidence += 0.1
+
+        seller_name = self._match_first(
+            [r"(?:销售方|销售单位)[:：\s]*([\u4e00-\u9fa5A-Za-z0-9（）()·\-_ ]{2,60})"],
+            normalized,
+        )
+        buyer_name = self._match_first(
+            [r"(?:购买方|购方)[:：\s]*([\u4e00-\u9fa5A-Za-z0-9（）()·\-_ ]{2,60})"],
+            normalized,
+        )
+
+        return {
+            "invoice_number": invoice_number or "未识别",
+            "invoice_date": invoice_date or "未识别",
+            "seller_name": seller_name or "未识别",
+            "seller_tax_id": None,
+            "buyer_name": buyer_name or "未识别",
+            "buyer_tax_id": None,
+            "total_amount": total_amount,
+            "tax_amount": tax_amount,
+            "amount_without_tax": amount_without_tax,
+            "tax_rate": tax_rate,
+            "product_list": [],
+            "confidence_score": round(min(confidence, 0.95), 2),
+        }
+
+    @staticmethod
+    def _match_first(patterns: List[str], text: str) -> Optional[str]:
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
+            if match:
+                return match.group(1).strip()
+        return None
 
     def _parse_vat_invoice_result(self, result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """解析百度增值税发票识别结果"""

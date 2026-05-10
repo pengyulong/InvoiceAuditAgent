@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     max_concurrent_audits: int = 5
     audit_timeout: int = 300
     max_contract_ocr_pages: int = 20
+    max_invoice_ocr_pages: int = 5
 
     class Config:
         env_file = "../.env"  # 从项目根目录加载.env文件

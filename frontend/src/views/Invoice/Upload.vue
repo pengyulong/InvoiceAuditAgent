@@ -14,8 +14,8 @@
     </div>
 
     <div class="main-content">
-      <el-row :gutter="24">
-        <el-col :lg="16" :md="24" :sm="24">
+      <el-row :gutter="24" class="upload-layout">
+        <el-col :lg="12" :md="24" :sm="24" class="upload-col">
           <el-card class="upload-card" shadow="hover">
             <template #header>
               <div class="card-header">
@@ -96,6 +96,15 @@
               <el-progress :percentage="uploadProgress" :stroke-width="10" />
             </div>
 
+            <el-alert
+              v-if="uploadError"
+              class="upload-error"
+              type="error"
+              :title="uploadError"
+              show-icon
+              :closable="false"
+            />
+
             <!-- 操作按钮 -->
             <div class="action-buttons" v-if="selectedFiles.length > 0">
               <el-button
@@ -120,7 +129,7 @@
           </el-card>
         </el-col>
 
-        <el-col :lg="8" :md="24" :sm="24">
+        <el-col :lg="12" :md="24" :sm="24" class="upload-col">
           <el-card class="instruction-card" shadow="hover">
             <template #header>
               <div class="card-header">
@@ -213,6 +222,7 @@ const selectedFiles = ref<File[]>([])
 const isUploading = ref(false)
 const uploadProgress = ref(0)
 const uploadStage = ref('准备上传')
+const uploadError = ref('')
 const MAX_FILE_SIZE = 50 * 1024 * 1024
 const MAX_FILE_COUNT = 50
 
@@ -273,6 +283,7 @@ const clearFiles = () => {
   uploadRef.value?.clearFiles()
   uploadProgress.value = 0
   uploadStage.value = '准备上传'
+  uploadError.value = ''
 }
 
 const previewLocalFile = (file: File) => {
@@ -295,6 +306,15 @@ const formatFileSize = (bytes: number): string => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
+const getRequestErrorMessage = (error: any) => {
+  const data = error?.response?.data
+  if (typeof data === 'string' && data.trim()) return data
+  if (data?.detail) return data.detail
+  if (data?.message) return data.message
+  if (error?.code === 'ECONNABORTED') return '请求超时，请稍后重试'
+  return error?.message || '未知错误'
+}
+
 const uploadAndStart = async () => {
   if (selectedFiles.value.length === 0) return
 
@@ -302,6 +322,7 @@ const uploadAndStart = async () => {
     isUploading.value = true
     uploadProgress.value = 0
     uploadStage.value = '正在上传文件'
+    uploadError.value = ''
 
     const formData = new FormData()
     selectedFiles.value.forEach((file) => {
@@ -321,17 +342,19 @@ const uploadAndStart = async () => {
 
     uploadProgress.value = 100
     uploadStage.value = '文件已上传，正在启动识别'
-    ElMessage.success(`上传成功，共 ${result.file_count} 个文件`)
+    ElMessage.info(`文件已上传，共 ${result.file_count} 个文件，正在启动识别`)
 
     // 启动OCR识别
     await apiService.post('/ocr/start', { task_id: result.task_id }, { timeout: 2 * 60 * 1000, loading: false } as any)
 
     uploadStage.value = '识别任务已启动'
+    ElMessage.success('识别任务已启动')
     router.push(`/invoice/processing/${result.task_id}`)
   } catch (error: any) {
-    uploadStage.value = '上传失败'
+    uploadStage.value = '上传或启动识别失败'
+    uploadError.value = getRequestErrorMessage(error)
     if (!error?.response) {
-      ElMessage.error('上传失败: ' + (error.message || '未知错误'))
+      ElMessage.error('上传失败: ' + uploadError.value)
     }
   } finally {
     isUploading.value = false
@@ -375,6 +398,17 @@ const uploadAndStart = async () => {
 
 .main-content {
   margin-top: 24px;
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.upload-layout {
+  align-items: stretch;
+}
+
+.upload-col {
+  display: flex;
 }
 
 .upload-card {
@@ -382,6 +416,7 @@ const uploadAndStart = async () => {
   border: 1px solid #e6edf6;
   border-radius: 8px;
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  width: 100%;
 }
 
 .card-header {
@@ -559,6 +594,10 @@ const uploadAndStart = async () => {
   border: 1px solid #dbe8fb;
 }
 
+.upload-error {
+  margin-top: 16px;
+}
+
 .upload-progress-row {
   display: flex;
   justify-content: space-between;
@@ -594,6 +633,7 @@ const uploadAndStart = async () => {
   border: 1px solid #e6edf6;
   border-radius: 8px;
   background: #fff;
+  width: 100%;
 }
 
 .instruction-content {
@@ -661,6 +701,10 @@ const uploadAndStart = async () => {
 
   .page-title {
     font-size: 24px;
+  }
+
+  .upload-layout {
+    row-gap: 24px;
   }
 
   .upload-content {

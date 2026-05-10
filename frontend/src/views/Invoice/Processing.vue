@@ -47,6 +47,15 @@
         </div>
       </el-card>
 
+      <el-alert
+        v-if="errorMessage"
+        class="error-alert"
+        type="error"
+        :title="errorMessage"
+        show-icon
+        :closable="false"
+      />
+
       <!-- 工作流步骤 -->
       <el-card class="workflow-card" shadow="hover">
         <template #header>
@@ -123,6 +132,7 @@ const taskId = ref(route.params.taskId as string)
 const status = ref('pending')
 const progress = ref(0)
 const elapsedSeconds = ref(0)
+const errorMessage = ref('')
 let elapsedTimer: any = null
 let ws: WebSocket | null = null
 
@@ -208,7 +218,10 @@ const connectWebSocket = () => {
       } else if (data.type === 'error') {
         status.value = 'failed'
         updateStep('ocr', 'error')
-        addLog('error', data.message || data.data?.message || '识别失败')
+        const message = data.data?.error || data.data?.message || data.message || '识别失败'
+        errorMessage.value = message
+        addLog('error', message)
+        ElMessage.error(message)
         if (elapsedTimer) clearInterval(elapsedTimer)
       }
     } catch {
@@ -272,12 +285,12 @@ onUnmounted(() => {
   margin-top: 16px;
 }
 
-.page-title {
-  font-size: 28px;
-  font-weight: 600;
-  color: #303133;
-  margin-bottom: 8px;
-}
+  .page-title {
+    font-size: 28px;
+    font-weight: 600;
+    color: #303133;
+    margin-bottom: 8px;
+  }
 
 .page-description {
   font-size: 16px;
@@ -287,9 +300,16 @@ onUnmounted(() => {
 
 .main-content {
   margin-top: 24px;
+  max-width: 1280px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .status-card {
+  margin-bottom: 24px;
+}
+
+.error-alert {
   margin-bottom: 24px;
 }
 
