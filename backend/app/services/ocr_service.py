@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, List
 from app.core.database import AsyncSessionLocal
 from app.models.audit import AuditTask
 from app.services.websocket_service import websocket_manager
+from app.services.ai_service import OCRConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ class OcrService:
     def __init__(self):
         self.active_tasks: Dict[str, Dict[str, Any]] = {}
 
-    async def execute_ocr(self, task_id: str, file_paths: List[str]):
+    async def execute_ocr(self, task_id: str, file_paths: List[str], allow_local_fallback: bool = False):
         """执行批量OCR识别"""
         start_time = time.time()
 
@@ -32,6 +33,7 @@ class OcrService:
                 "start_time": start_time,
                 "total_files": len(file_paths),
                 "processed_files": 0,
+                "allow_local_fallback": allow_local_fallback,
             }
 
             await websocket_manager.send_progress(task_id, {
@@ -72,7 +74,11 @@ class OcrService:
                     async def ocr_progress(agent_name, pct, msg):
                         await websocket_manager.send_log(task_id, msg, "info")
 
-                    result = await ai_service.extract_invoice_info(file_path, ocr_progress)
+                    result = await ai_service.extract_invoice_info(
+                        file_path,
+                        ocr_progress,
+                        allow_local_fallback=allow_local_fallback,
+                    )
                     result["source_file"] = file_path
                     result["file_name"] = file_name
                     results.append(result)
@@ -81,6 +87,16 @@ class OcrService:
                         f"[{i + 1}/{total}] 识别完成: {file_name} "
                         f"(发票号码: {result.get('invoice_number', '未识别')})", "success")
 
+                except OCRConfigError as e:
+                    logger.error(f"OCR配置不可用: {file_path}, {e}")
+                    await self._handle_failure(
+                        task_id,
+                        str(e),
+                        start_time,
+                        error_code=e.error_code,
+                        can_fallback=True,
+                    )
+                    return
                 except Exception as e:
                     logger.error(f"识别发票失败: {file_path}, {e}")
                     results.append({
@@ -136,17 +152,34 @@ class OcrService:
         except Exception as e:
             await self._handle_failure(task_id, str(e), start_time)
 
-    async def _handle_failure(self, task_id: str, error: str, start_time: float):
+    async def _handle_failure(
+        self,
+        task_id: str,
+        error: str,
+        start_time: float,
+        error_code: str = "OCR_FAILED",
+        can_fallback: bool = False,
+    ):
         elapsed = time.time() - start_time
         self.active_tasks[task_id] = {
             "status": "failed",
             "progress": 0,
             "error": error,
+            "error_code": error_code,
+            "can_fallback": can_fallback,
             "elapsed": elapsed,
         }
-        await self._persist_result(task_id, {"error": error}, elapsed, status="failed")
+        await self._persist_result(
+            task_id,
+            {"error": error, "error_code": error_code, "can_fallback": can_fallback},
+            elapsed,
+            status="failed",
+            error_message=error,
+        )
         await websocket_manager.send_error(task_id, {
             "error": error,
+            "error_code": error_code,
+            "can_fallback": can_fallback,
             "message": "OCR识别任务执行失败",
             "elapsed": elapsed,
         })
@@ -158,6 +191,7 @@ class OcrService:
         result_data: Dict[str, Any],
         elapsed: float,
         status: str = "completed",
+        error_message: Optional[str] = None,
     ):
         try:
             async with AsyncSessionLocal() as session:
@@ -165,6 +199,7 @@ class OcrService:
                 if task:
                     task.status = status
                     task.progress = 100 if status == "completed" else 0
+                    task.error_message = None if status == "completed" else error_message
                     task.result_data = result_data
                     task.completed_at = datetime.utcnow()
                     await session.commit()
@@ -182,6 +217,9 @@ class OcrService:
             "current_step": state.get("current_step", "未知"),
             "total_files": state.get("total_files", 0),
             "processed_files": state.get("processed_files", 0),
+            "error": state.get("error"),
+            "error_code": state.get("error_code"),
+            "can_fallback": state.get("can_fallback", False),
         }
 
     async def get_ocr_results(self, task_id: str) -> Dict[str, Any]:

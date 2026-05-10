@@ -115,6 +115,37 @@
         </div>
       </el-card>
     </div>
+
+    <el-dialog
+      v-model="showOcrConfigDialog"
+      title="OCR配置异常"
+      width="520px"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+    >
+      <div class="ocr-dialog">
+        <p class="ocr-dialog-title">检测到百度OCR配置或服务异常。</p>
+        <p class="ocr-dialog-text">
+          建议先修复OCR配置后重试，以保证识别准确率。
+          如果当前无法修复配置，可以切换到本地Tesseract降级识别。
+        </p>
+        <el-alert
+          :title="errorMessage || 'OCR配置异常'"
+          type="warning"
+          show-icon
+          :closable="false"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="showOcrConfigDialog = false">稍后处理</el-button>
+        <el-button type="primary" plain :loading="retrying" @click="retryCloudOcr">
+          修复后重试
+        </el-button>
+        <el-button type="warning" :loading="retrying" @click="retryWithLocalFallback">
+          使用本地降级
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -133,6 +164,8 @@ const status = ref('pending')
 const progress = ref(0)
 const elapsedSeconds = ref(0)
 const errorMessage = ref('')
+const showOcrConfigDialog = ref(false)
+const retrying = ref(false)
 let elapsedTimer: any = null
 let ws: WebSocket | null = null
 
@@ -182,6 +215,59 @@ const addLog = (level: string, message: string) => {
   })
 }
 
+const loadCurrentStatus = async () => {
+  if (!taskId.value) return
+  try {
+    const statusInfo = await apiService.get(`/ocr/${taskId.value}/status`, undefined, { loading: false } as any)
+    if (statusInfo?.status) {
+      status.value = statusInfo.status
+      progress.value = statusInfo.progress || 0
+      if (statusInfo.status === 'failed' && statusInfo.error) {
+        errorMessage.value = statusInfo.error
+        if (statusInfo.error_code === 'OCR_CONFIG_REQUIRED') {
+          showOcrConfigDialog.value = true
+        }
+      }
+    }
+  } catch {
+    // 忽略轮询失败，等待 WebSocket
+  }
+}
+
+const retryOcr = async (allowLocalFallback: boolean) => {
+  if (!taskId.value) return
+  retrying.value = true
+  try {
+    await apiService.post(
+      '/ocr/start',
+      {
+        task_id: taskId.value,
+        allow_local_fallback: allowLocalFallback,
+      },
+      { loading: false } as any
+    )
+    errorMessage.value = ''
+    showOcrConfigDialog.value = false
+    status.value = 'running'
+    progress.value = 0
+    elapsedSeconds.value = 0
+    addLog('info', allowLocalFallback ? '已切换到本地Tesseract降级识别' : '已重新启动云端OCR识别')
+    ElMessage.success(allowLocalFallback ? '已切换到本地降级识别' : '已重新启动识别')
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.detail || error?.message || '重新识别失败')
+  } finally {
+    retrying.value = false
+  }
+}
+
+const retryCloudOcr = async () => {
+  await retryOcr(false)
+}
+
+const retryWithLocalFallback = async () => {
+  await retryOcr(true)
+}
+
 const connectWebSocket = () => {
   if (!taskId.value) return
 
@@ -220,6 +306,9 @@ const connectWebSocket = () => {
         updateStep('ocr', 'error')
         const message = data.data?.error || data.data?.message || data.message || '识别失败'
         errorMessage.value = message
+        if (data.data?.error_code === 'OCR_CONFIG_REQUIRED') {
+          showOcrConfigDialog.value = true
+        }
         addLog('error', message)
         ElMessage.error(message)
         if (elapsedTimer) clearInterval(elapsedTimer)
@@ -257,6 +346,7 @@ onMounted(() => {
     if (isRunning.value) elapsedSeconds.value++
   }, 1000)
 
+  loadCurrentStatus()
   connectWebSocket()
 })
 
@@ -311,6 +401,25 @@ onUnmounted(() => {
 
 .error-alert {
   margin-bottom: 24px;
+}
+
+.ocr-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ocr-dialog-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.ocr-dialog-text {
+  margin: 0;
+  line-height: 1.6;
+  color: #606266;
 }
 
 .status-content {

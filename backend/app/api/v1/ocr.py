@@ -13,6 +13,7 @@ router = APIRouter()
 
 class OcrStartRequest(BaseModel):
     task_id: str
+    allow_local_fallback: bool = False
 
 
 @router.post("/start", summary="启动OCR识别")
@@ -53,7 +54,12 @@ async def start_ocr(request: OcrStartRequest, background_tasks: BackgroundTasks)
         if not file_paths:
             raise HTTPException(status_code=400, detail="未找到待识别的文件，请先上传发票文件")
 
-        background_tasks.add_task(ocr_service.execute_ocr, request.task_id, file_paths)
+        background_tasks.add_task(
+            ocr_service.execute_ocr,
+            request.task_id,
+            file_paths,
+            request.allow_local_fallback,
+        )
 
         return {
             "task_id": request.task_id,

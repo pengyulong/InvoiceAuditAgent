@@ -25,6 +25,14 @@ class AIServiceError(Exception):
     pass
 
 
+class OCRConfigError(AIServiceError):
+    """OCR配置或云端识别不可用"""
+
+    def __init__(self, message: str, error_code: str = "OCR_CONFIG_REQUIRED"):
+        super().__init__(message)
+        self.error_code = error_code
+
+
 class PDFExtractor:
     """PDF页面提取器，将PDF转换为图片"""
 
@@ -489,7 +497,12 @@ OCR识别的文字：
             logger.warning(f"读取PDF页数失败: {file_path}, {e}")
             return 1
 
-    async def extract_invoice_info(self, image_path: str, progress_callback=None) -> Dict[str, Any]:
+    async def extract_invoice_info(
+        self,
+        image_path: str,
+        progress_callback=None,
+        allow_local_fallback: bool = False,
+    ) -> Dict[str, Any]:
         """从发票图片中提取信息：优先百度增值税发票OCR，失败则通用OCR+DeepSeek结构化"""
         logger.info(f"开始提取发票信息: {image_path}")
 
@@ -497,6 +510,14 @@ OCR识别的文字：
             raw_text = ""
             parsed_result: Dict[str, Any] = {}
             cloud_ocr_error: Optional[str] = None
+            ocr_source = "unknown"
+
+            if not self.baidu_client:
+                if not allow_local_fallback:
+                    raise OCRConfigError(
+                        "百度OCR未配置或不可用。请先修复OCR配置后重试；如果暂时无法配置，可选择本地Tesseract降级识别。"
+                    )
+                ocr_source = "local_tesseract"
 
             # Step 1: 优先尝试百度增值税发票专用接口
             if self.baidu_client:
@@ -510,10 +531,11 @@ OCR识别的文字：
                         parsed = self._parse_vat_invoice_result(vat_result)
                         if parsed and parsed.get("invoice_number"):
                             logger.info("使用百度增值税发票专用接口识别成功")
+                            parsed["_source"] = "baidu_vat_invoice"
                             return parsed
                 except AIServiceError as e:
                     cloud_ocr_error = str(e)
-                    logger.warning(f"百度增值税发票OCR不可用，切换本地OCR: {e}")
+                    logger.warning(f"百度增值税发票OCR不可用: {e}")
 
                 # Step 2: 通用文字识别
                 try:
@@ -521,14 +543,21 @@ OCR识别的文字：
                         await progress_callback("invoice_analyzer", 40, "正在进行云端OCR文字识别...")
                     async with self.baidu_client:
                         raw_text = await self.baidu_client.recognize_text(image_path, use_high_accuracy=True)
+                    ocr_source = "baidu_ocr"
                 except AIServiceError as e:
                     cloud_ocr_error = str(e)
-                    logger.warning(f"云端OCR失败，切换本地OCR: {e}")
+                    logger.warning(f"云端OCR失败: {e}")
 
             if not raw_text.strip():
+                if not allow_local_fallback:
+                    raise OCRConfigError(
+                        f"百度OCR识别失败：{cloud_ocr_error or '未获取到识别结果'}。"
+                        "请先修复OCR配置后重试；如果暂时无法配置，可选择本地Tesseract降级识别。"
+                    )
                 if progress_callback:
                     await progress_callback("invoice_analyzer", 45, "正在使用本地OCR识别...")
                 raw_text = await self._recognize_invoice_text_local(image_path, progress_callback)
+                ocr_source = "local_tesseract"
 
             if not raw_text.strip():
                 raise AIServiceError(cloud_ocr_error or "OCR未提取到文字")
@@ -590,7 +619,7 @@ OCR识别的文字：
             if not parsed_result:
                 parsed_result = self._parse_invoice_text_locally(raw_text)
 
-            parsed_result.setdefault("_source", "local_ocr")
+            parsed_result.setdefault("_source", ocr_source)
             parsed_result.setdefault("raw_text_preview", raw_text[:2000])
             return parsed_result
 
