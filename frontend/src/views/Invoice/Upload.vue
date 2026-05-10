@@ -24,29 +24,6 @@
               </div>
             </template>
 
-            <div class="upload-summary">
-              <div class="upload-summary-main">
-                <div class="summary-title">批量发票识别</div>
-                <div class="summary-subtitle">
-                  选择 PDF 或图片后直接开始识别，系统会自动保留任务和原文件。
-                </div>
-              </div>
-              <div class="upload-summary-stats">
-                <div class="summary-stat">
-                  <el-icon><Document /></el-icon>
-                  <span>{{ selectedFiles.length }} 个文件</span>
-                </div>
-                <div class="summary-stat">
-                  <el-icon><DataLine /></el-icon>
-                  <span>{{ totalSelectedSizeLabel }}</span>
-                </div>
-                <div class="summary-stat">
-                  <el-icon><Timer /></el-icon>
-                  <span>单次最多 {{ MAX_FILE_COUNT }} 个</span>
-                </div>
-              </div>
-            </div>
-
             <el-upload
               ref="uploadRef"
               :auto-upload="false"
@@ -223,10 +200,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { View, Close, UploadFilled, Document, Loading, RefreshLeft, CirclePlus, DataLine, Timer } from '@element-plus/icons-vue'
+import { View, Close, UploadFilled, Document, RefreshLeft } from '@element-plus/icons-vue'
 import { apiService } from '@/services/api'
 
 const router = useRouter()
@@ -245,11 +222,6 @@ const localPreviewUrl = ref('')
 const localPreviewFileName = ref('')
 
 const isLocalPreviewPDF = ref(false)
-const totalSelectedSize = computed(() =>
-  selectedFiles.value.reduce((total, file) => total + file.size, 0)
-)
-
-const totalSelectedSizeLabel = computed(() => formatFileSize(totalSelectedSize.value))
 
 const isSupportedFile = (file: File) => {
   const lowerName = file.name.toLowerCase()
@@ -427,53 +399,6 @@ const uploadAndStart = async () => {
   font-size: 16px;
   font-weight: 600;
   color: #172033;
-}
-
-.upload-summary {
-  display: flex;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 0 0 20px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid #edf2f7;
-}
-
-.upload-summary-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.summary-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #172033;
-  margin-bottom: 8px;
-}
-
-.summary-subtitle {
-  color: #5b6575;
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.upload-summary-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.summary-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: #f5f8fc;
-  color: #384152;
-  font-size: 13px;
-  white-space: nowrap;
 }
 
 .upload-component {
@@ -736,14 +661,6 @@ const uploadAndStart = async () => {
 
   .page-title {
     font-size: 24px;
-  }
-
-  .upload-summary {
-    flex-direction: column;
-  }
-
-  .upload-summary-stats {
-    justify-content: flex-start;
   }
 
   .upload-content {

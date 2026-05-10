@@ -8,16 +8,6 @@
         <p class="hero-subtitle">
           自动识别发票信息，批量处理文件，并完成合同与发票的匹配审计。
         </p>
-        <div class="hero-actions">
-          <el-button type="primary" size="large" class="hero-button" @click="goToInvoice">
-            <el-icon><UploadFilled /></el-icon>
-            发票识别
-          </el-button>
-          <el-button size="large" class="hero-button secondary" @click="goToAudit">
-            <el-icon><Document /></el-icon>
-            合同审计
-          </el-button>
-        </div>
       </div>
     </section>
 
@@ -225,11 +215,8 @@ onMounted(() => {
 .hero-content {
   max-width: 800px;
   margin: 0 auto;
-  padding: 32px 28px;
-  background: #ffffff;
-  border: 1px solid #e6edf6;
-  border-radius: 8px;
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+  padding: 8px 4px 0;
+  text-align: center;
 }
 
 .hero-kicker {
@@ -259,26 +246,6 @@ onMounted(() => {
   color: #5b6575;
   max-width: 680px;
   margin: 0 auto;
-}
-
-.hero-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-top: 28px;
-}
-
-.hero-button {
-  min-width: 160px;
-  height: 44px;
-  border-radius: 8px;
-}
-
-.hero-button.secondary {
-  background: #ffffff;
-  border-color: #dbe4f0;
-  color: #172033;
 }
 
 /* 双入口卡片 */
@@ -502,10 +469,6 @@ onMounted(() => {
     padding: 16px 16px 8px;
   }
 
-  .hero-content {
-    padding: 24px 18px;
-  }
-
   .hero-title {
     font-size: 32px;
   }
@@ -533,10 +496,6 @@ onMounted(() => {
 
   .entry-button {
     min-width: 160px;
-  }
-
-  .hero-button {
-    min-width: 140px;
   }
 }
 </style>
