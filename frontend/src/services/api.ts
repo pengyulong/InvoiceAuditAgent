@@ -41,6 +41,38 @@ class ApiService {
     this.setupInterceptors()
   }
 
+  private getErrorMessage(error: any): string {
+    if (error?.code === 'ECONNABORTED') {
+      return '请求超时，请稍后重试'
+    }
+
+    if (!error?.response) {
+      return '网络连接失败，请检查网络设置'
+    }
+
+    const { status, data } = error.response
+    const serverMessage = typeof data === 'string'
+      ? ''
+      : data?.message || data?.detail || ''
+
+    switch (status) {
+      case 400:
+        return serverMessage || '请求参数错误'
+      case 401:
+        return '未授权，请重新登录'
+      case 403:
+        return '拒绝访问'
+      case 404:
+        return '请求的资源不存在'
+      case 413:
+        return serverMessage || '文件过大，请选择更小的文件'
+      case 500:
+        return serverMessage || '服务器内部错误'
+      default:
+        return serverMessage || `请求失败 (${status})`
+    }
+  }
+
   private setupInterceptors() {
     // 请求拦截器
     this.instance.interceptors.request.use(
@@ -84,34 +116,12 @@ class ApiService {
         const appStore = useAppStore()
         appStore.setLoading(false)
 
-        let message = '网络错误'
-        if (error.response) {
-          const { status, data } = error.response
-          switch (status) {
-            case 400:
-              message = data.message || data.detail || '请求参数错误'
-              break
-            case 401:
-              message = '未授权，请重新登录'
-              authStorage.clearSession()
-              if (window.location.pathname !== '/login') {
-                window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
-              }
-              break
-            case 403:
-              message = '拒绝访问'
-              break
-            case 404:
-              message = '请求的资源不存在'
-              break
-            case 500:
-              message = data.message || data.detail || '服务器内部错误'
-              break
-            default:
-              message = data.message || data.detail || `请求失败 (${status})`
+        const message = this.getErrorMessage(error)
+        if (error?.response?.status === 401) {
+          authStorage.clearSession()
+          if (window.location.pathname !== '/login') {
+            window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`
           }
-        } else if (error.request) {
-          message = '网络连接失败，请检查网络设置'
         }
 
         ElMessage.error(message)
@@ -149,11 +159,15 @@ class ApiService {
   }
 
   // 文件上传
-  async upload<T = any>(url: string, formData: FormData, onProgress?: (progress: number) => void): Promise<T> {
+  async upload<T = any>(
+    url: string,
+    formData: FormData,
+    onProgress?: (progress: number) => void,
+    config?: AxiosRequestConfig
+  ): Promise<T> {
     const response = await this.instance.post(url, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      },
+      timeout: config?.timeout ?? 10 * 60 * 1000,
+      ...config,
       onUploadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total)

@@ -19,10 +19,33 @@
           <el-card class="upload-card" shadow="hover">
             <template #header>
               <div class="card-header">
-                <span class="header-icon">🧾</span>
+                <el-icon class="header-icon"><Document /></el-icon>
                 <span class="header-title">上传发票</span>
               </div>
             </template>
+
+            <div class="upload-summary">
+              <div class="upload-summary-main">
+                <div class="summary-title">批量发票识别</div>
+                <div class="summary-subtitle">
+                  选择 PDF 或图片后直接开始识别，系统会自动保留任务和原文件。
+                </div>
+              </div>
+              <div class="upload-summary-stats">
+                <div class="summary-stat">
+                  <el-icon><Document /></el-icon>
+                  <span>{{ selectedFiles.length }} 个文件</span>
+                </div>
+                <div class="summary-stat">
+                  <el-icon><DataLine /></el-icon>
+                  <span>{{ totalSelectedSizeLabel }}</span>
+                </div>
+                <div class="summary-stat">
+                  <el-icon><Timer /></el-icon>
+                  <span>单次最多 {{ MAX_FILE_COUNT }} 个</span>
+                </div>
+              </div>
+            </div>
 
             <el-upload
               ref="uploadRef"
@@ -36,18 +59,23 @@
             >
               <div class="upload-content">
                 <div v-if="selectedFiles.length === 0" class="upload-placeholder">
-                  <span class="upload-icon">☁️</span>
+                  <div class="upload-icon-wrap">
+                    <el-icon class="upload-icon"><UploadFilled /></el-icon>
+                  </div>
                   <h3 class="upload-title">拖拽发票文件到此处</h3>
-                  <p class="upload-subtitle">或者点击选择文件（支持多选）</p>
-                  <p class="upload-hint">
-                    支持格式：PDF、JPG、PNG<br>
-                    单次最多上传50个文件
-                  </p>
+                  <p class="upload-subtitle">或点击选择文件</p>
+                  <div class="upload-hint-row">
+                    <el-tag size="small" effect="plain">PDF</el-tag>
+                    <el-tag size="small" effect="plain">JPG / JPEG</el-tag>
+                    <el-tag size="small" effect="plain">PNG</el-tag>
+                  </div>
                 </div>
                 <div v-else class="upload-has-files">
-                  <span class="upload-icon">📄</span>
+                  <div class="upload-icon-wrap">
+                    <el-icon class="upload-icon"><Document /></el-icon>
+                  </div>
                   <h3 class="upload-title">已选择 {{ selectedFiles.length }} 个文件</h3>
-                  <p class="upload-subtitle">点击或拖拽继续添加文件</p>
+                  <p class="upload-subtitle">继续添加文件，或直接开始上传</p>
                 </div>
               </div>
             </el-upload>
@@ -60,23 +88,35 @@
               </div>
               <div class="file-list">
                 <div v-for="(file, index) in selectedFiles" :key="index" class="file-item">
-                  <span class="file-icon">{{ getFileIcon(file.name) }}</span>
-                  <span class="file-name">{{ file.name }}</span>
-                  <span class="file-size">{{ formatFileSize(file.size) }}</span>
-                  <el-button
-                    v-if="file.type.startsWith('image/') || file.name.toLowerCase().endsWith('.pdf')"
-                    circle
-                    size="small"
-                    class="preview-btn"
-                    @click="previewLocalFile(file)"
-                  >
-                    <el-icon><View /></el-icon>
-                  </el-button>
-                  <el-button circle size="small" type="danger" @click="removeFile(index)">
-                    <el-icon><Close /></el-icon>
-                  </el-button>
+                  <div class="file-main">
+                    <span class="file-icon">{{ getFileIcon(file.name) }}</span>
+                    <span class="file-name">{{ file.name }}</span>
+                  </div>
+                  <div class="file-meta">
+                    <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                    <el-button
+                      v-if="file.type.startsWith('image/') || file.name.toLowerCase().endsWith('.pdf')"
+                      circle
+                      size="small"
+                      class="preview-btn"
+                      @click="previewLocalFile(file)"
+                    >
+                      <el-icon><View /></el-icon>
+                    </el-button>
+                    <el-button circle size="small" type="danger" plain @click="removeFile(index)">
+                      <el-icon><Close /></el-icon>
+                    </el-button>
+                  </div>
                 </div>
               </div>
+            </div>
+
+            <div v-if="isUploading" class="upload-progress-panel">
+              <div class="upload-progress-row">
+                <span class="upload-progress-label">{{ uploadStage }}</span>
+                <span class="upload-progress-value">{{ uploadProgress }}%</span>
+              </div>
+              <el-progress :percentage="uploadProgress" :stroke-width="10" />
             </div>
 
             <!-- 操作按钮 -->
@@ -88,6 +128,7 @@
                 :loading="isUploading"
                 @click="uploadAndStart"
               >
+                <el-icon class="button-icon"><UploadFilled /></el-icon>
                 上传并开始识别
               </el-button>
               <el-button
@@ -95,6 +136,7 @@
                 @click="clearFiles"
                 :disabled="isUploading"
               >
+                <el-icon class="button-icon"><RefreshLeft /></el-icon>
                 清除所有
               </el-button>
             </div>
@@ -181,10 +223,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { View, Close } from '@element-plus/icons-vue'
+import { View, Close, UploadFilled, Document, Loading, RefreshLeft, CirclePlus, DataLine, Timer } from '@element-plus/icons-vue'
 import { apiService } from '@/services/api'
 
 const router = useRouter()
@@ -192,6 +234,10 @@ const router = useRouter()
 const uploadRef = ref()
 const selectedFiles = ref<File[]>([])
 const isUploading = ref(false)
+const uploadProgress = ref(0)
+const uploadStage = ref('准备上传')
+const MAX_FILE_SIZE = 50 * 1024 * 1024
+const MAX_FILE_COUNT = 50
 
 // 本地预览
 const localPreviewVisible = ref(false)
@@ -199,19 +245,47 @@ const localPreviewUrl = ref('')
 const localPreviewFileName = ref('')
 
 const isLocalPreviewPDF = ref(false)
+const totalSelectedSize = computed(() =>
+  selectedFiles.value.reduce((total, file) => total + file.size, 0)
+)
+
+const totalSelectedSizeLabel = computed(() => formatFileSize(totalSelectedSize.value))
+
+const isSupportedFile = (file: File) => {
+  const lowerName = file.name.toLowerCase()
+  return lowerName.endsWith('.pdf') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.png')
+}
+
+const isDuplicateFile = (file: File) => {
+  return selectedFiles.value.some(
+    (existing) =>
+      existing.name === file.name &&
+      existing.size === file.size &&
+      existing.lastModified === file.lastModified
+  )
+}
 
 const handleFileChange = (file: any) => {
   const raw = file.raw as File
   if (!raw) return
 
-  const ext = raw.name.toLowerCase()
-  if (!ext.endsWith('.pdf') && !ext.endsWith('.jpg') && !ext.endsWith('.jpeg') && !ext.endsWith('.png')) {
+  if (!isSupportedFile(raw)) {
     ElMessage.warning(`不支持的文件类型: ${raw.name}`)
     return
   }
 
-  if (selectedFiles.value.length >= 50) {
-    ElMessage.warning('单次最多上传50个文件')
+  if (raw.size > MAX_FILE_SIZE) {
+    ElMessage.warning(`单个文件不能超过 ${formatFileSize(MAX_FILE_SIZE)}`)
+    return
+  }
+
+  if (selectedFiles.value.length >= MAX_FILE_COUNT) {
+    ElMessage.warning(`单次最多上传 ${MAX_FILE_COUNT} 个文件`)
+    return
+  }
+
+  if (isDuplicateFile(raw)) {
+    ElMessage.info(`文件已在列表中: ${raw.name}`)
     return
   }
 
@@ -225,6 +299,8 @@ const removeFile = (index: number) => {
 const clearFiles = () => {
   selectedFiles.value = []
   uploadRef.value?.clearFiles()
+  uploadProgress.value = 0
+  uploadStage.value = '准备上传'
 }
 
 const previewLocalFile = (file: File) => {
@@ -252,23 +328,39 @@ const uploadAndStart = async () => {
 
   try {
     isUploading.value = true
+    uploadProgress.value = 0
+    uploadStage.value = '正在上传文件'
 
     const formData = new FormData()
     selectedFiles.value.forEach((file) => {
-      formData.append('files', file)
+      formData.append('files', file, file.name)
     })
     formData.append('task_name', `发票识别-${new Date().toLocaleDateString()}`)
 
-    const result = await apiService.upload('/upload/invoice-batch', formData)
+    const result = await apiService.upload(
+      '/upload/invoice-batch',
+      formData,
+      (progress) => {
+        uploadProgress.value = Math.min(progress, 95)
+        uploadStage.value = progress < 100 ? `文件上传中 ${progress}%` : '文件已上传，正在创建识别任务'
+      },
+      { timeout: 10 * 60 * 1000, loading: false } as any
+    )
 
+    uploadProgress.value = 100
+    uploadStage.value = '文件已上传，正在启动识别'
     ElMessage.success(`上传成功，共 ${result.file_count} 个文件`)
 
     // 启动OCR识别
-    await apiService.post('/ocr/start', { task_id: result.task_id })
+    await apiService.post('/ocr/start', { task_id: result.task_id }, { timeout: 2 * 60 * 1000, loading: false } as any)
 
+    uploadStage.value = '识别任务已启动'
     router.push(`/invoice/processing/${result.task_id}`)
   } catch (error: any) {
-    ElMessage.error('上传失败: ' + (error.message || '未知错误'))
+    uploadStage.value = '上传失败'
+    if (!error?.response) {
+      ElMessage.error('上传失败: ' + (error.message || '未知错误'))
+    }
   } finally {
     isUploading.value = false
   }
@@ -277,11 +369,19 @@ const uploadAndStart = async () => {
 
 <style scoped>
 .upload-page {
+  min-height: 100vh;
   padding: 24px;
+  background:
+    linear-gradient(180deg, #f8fafc 0%, #f3f7fc 100%);
 }
 
 .page-header {
   margin-bottom: 24px;
+  padding: 24px;
+  border: 1px solid #e6edf6;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
 }
 
 .header-content {
@@ -291,7 +391,7 @@ const uploadAndStart = async () => {
 .page-title {
   font-size: 28px;
   font-weight: 600;
-  color: #303133;
+  color: #172033;
   margin-bottom: 8px;
 }
 
@@ -307,6 +407,9 @@ const uploadAndStart = async () => {
 
 .upload-card {
   margin-bottom: 24px;
+  border: 1px solid #e6edf6;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
 }
 
 .card-header {
@@ -317,50 +420,130 @@ const uploadAndStart = async () => {
 
 .header-icon {
   font-size: 18px;
+  color: #2563eb;
 }
 
 .header-title {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: #172033;
+}
+
+.upload-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 0 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.upload-summary-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.summary-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #172033;
+  margin-bottom: 8px;
+}
+
+.summary-subtitle {
+  color: #5b6575;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.upload-summary-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.summary-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f5f8fc;
+  color: #384152;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.upload-component {
+  display: block;
 }
 
 .upload-component :deep(.el-upload-dragger) {
-  border: 2px dashed #DCDFE6;
+  width: 100%;
+  border: 1.5px dashed #c7d3e4;
   border-radius: 8px;
-  padding: 32px 24px;
+  padding: 28px 24px;
   transition: all 0.3s ease;
+  background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
 }
 
 .upload-component :deep(.el-upload-dragger:hover) {
-  border-color: #409EFF;
-  background-color: #F5F7FA;
+  border-color: #2563eb;
+  background: #f5f9ff;
+  box-shadow: 0 12px 30px rgba(37, 99, 235, 0.08);
+}
+
+.upload-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+.upload-placeholder,
+.upload-has-files {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.upload-icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  background: #eaf2ff;
+  color: #2563eb;
 }
 
 .upload-icon {
-  font-size: 48px;
-  color: #C0C4CC;
-  margin-bottom: 16px;
+  font-size: 34px;
 }
 
 .upload-title {
   font-size: 18px;
   font-weight: 600;
-  color: #303133;
+  color: #172033;
   margin-bottom: 8px;
 }
 
 .upload-subtitle {
   font-size: 14px;
-  color: #606266;
-  margin-bottom: 16px;
+  color: #5b6575;
+  margin-bottom: 12px;
 }
 
-.upload-hint {
-  font-size: 12px;
-  color: #909399;
-  line-height: 1.6;
-  margin: 0;
+.upload-hint-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
 }
 
 .file-list-section {
@@ -394,10 +577,27 @@ const uploadAndStart = async () => {
 .file-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background-color: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #edf2f7;
+}
+
+.file-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.file-meta {
+  display: flex;
+  align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background-color: #FAFAFA;
-  border-radius: 6px;
+  flex-shrink: 0;
 }
 
 .file-icon {
@@ -405,7 +605,6 @@ const uploadAndStart = async () => {
 }
 
 .file-name {
-  flex: 1;
   font-size: 13px;
   color: #303133;
   overflow: hidden;
@@ -420,11 +619,38 @@ const uploadAndStart = async () => {
 }
 
 .preview-btn {
-  opacity: 0.6;
+  opacity: 0.85;
 }
 
 .preview-btn:hover {
   opacity: 1;
+}
+
+.upload-progress-panel {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f7fbff;
+  border: 1px solid #dbe8fb;
+}
+
+.upload-progress-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
+.upload-progress-label {
+  font-size: 13px;
+  color: #35517f;
+}
+
+.upload-progress-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2563eb;
 }
 
 .action-buttons {
@@ -434,8 +660,15 @@ const uploadAndStart = async () => {
   margin-top: 24px;
 }
 
+.button-icon {
+  margin-right: 6px;
+}
+
 .instruction-card {
   margin-bottom: 24px;
+  border: 1px solid #e6edf6;
+  border-radius: 8px;
+  background: #fff;
 }
 
 .instruction-content {
@@ -497,8 +730,34 @@ const uploadAndStart = async () => {
     padding: 16px;
   }
 
+  .page-header {
+    padding: 18px;
+  }
+
   .page-title {
     font-size: 24px;
+  }
+
+  .upload-summary {
+    flex-direction: column;
+  }
+
+  .upload-summary-stats {
+    justify-content: flex-start;
+  }
+
+  .upload-content {
+    min-height: 180px;
+  }
+
+  .file-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .file-meta {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .action-buttons {

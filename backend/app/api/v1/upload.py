@@ -16,6 +16,8 @@ from app.models.audit import AuditTask
 
 router = APIRouter()
 file_service = FileService()
+UPLOAD_CHUNK_SIZE = 1024 * 1024
+ALLOWED_INVOICE_SUFFIXES = ('.pdf', '.jpg', '.jpeg', '.png')
 
 
 def _decode_zip_member_name(name: str) -> str:
@@ -80,6 +82,60 @@ def _write_sample_pdf(path: Path, title: str, lines: List[str]):
         c.drawString(72, y, line)
         y -= 20
     c.save()
+
+
+def _safe_upload_filename(filename: str) -> str:
+    return Path(filename or "upload.bin").name.replace("\x00", "_")
+
+
+async def _save_upload_file(file: UploadFile, destination: Path) -> int:
+    total_size = 0
+    try:
+        async with aiofiles.open(destination, "wb") as target:
+            while True:
+                chunk = await file.read(UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > settings.max_file_size:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"文件大小超过限制({settings.max_file_size / 1024 / 1024:.1f}MB)"
+                    )
+                await target.write(chunk)
+    except Exception:
+        if destination.exists():
+            destination.unlink(missing_ok=True)
+        raise
+    finally:
+        await file.close()
+
+    return total_size
+
+
+async def _build_invoice_file_info(file_path: Path, size: int) -> dict:
+    file_type = await file_service._get_file_type(file_path)
+    file_info = {
+        "id": str(uuid.uuid4()),
+        "name": file_path.name,
+        "size": size,
+        "path": str(file_path),
+        "type": file_type,
+        "category": "invoice",
+        "created_at": file_path.stat().st_ctime,
+        "modified_at": file_path.stat().st_mtime,
+    }
+
+    if file_type == "application/pdf":
+        file_info.update({
+            "pages": "unknown",
+            "format": "PDF",
+            "readable": True,
+        })
+    elif file_type.startswith("image/"):
+        file_info.update(await file_service._get_image_basic_metadata(file_path))
+
+    return file_info
 
 
 def _ensure_sample_zip() -> Path:
@@ -305,19 +361,25 @@ async def upload_invoice_batch(
         file_paths = []
 
         for file in files:
-            if not file.filename.lower().endswith(('.pdf', '.jpg', '.jpeg', '.png')):
+            if not file.filename or not file.filename.lower().endswith(ALLOWED_INVOICE_SUFFIXES):
                 continue
 
-            safe_name = f"{str(uuid.uuid4())[:8]}_{file.filename}"
+            if file.size is not None and file.size > settings.max_file_size:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"文件大小超过限制({settings.max_file_size / 1024 / 1024:.1f}MB)"
+                )
+
+            safe_name = f"{str(uuid.uuid4())[:8]}_{_safe_upload_filename(file.filename)}"
             file_path = extracted_dir / safe_name
 
-            async with aiofiles.open(file_path, 'wb') as f:
-                content = await file.read()
-                await f.write(content)
-
-            file_info = await file_service.analyze_file(file_path)
+            saved_size = await _save_upload_file(file, file_path)
+            file_info = await _build_invoice_file_info(file_path, saved_size)
             uploaded_files.append(file_info)
             file_paths.append(str(file_path))
+
+        if not uploaded_files:
+            raise HTTPException(status_code=400, detail="未找到可上传的发票文件")
 
         task = AuditTask(
             id=task_id,

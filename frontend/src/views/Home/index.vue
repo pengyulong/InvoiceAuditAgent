@@ -3,10 +3,21 @@
     <!-- Hero Section -->
     <section class="hero-section">
       <div class="hero-content">
+        <div class="hero-kicker">智能合同发票审计系统</div>
         <h1 class="hero-title">AI驱动的智能审计解决方案</h1>
         <p class="hero-subtitle">
-          通过先进的AI技术，自动化识别发票信息、审计采购合同与发票的匹配性
+          自动识别发票信息，批量处理文件，并完成合同与发票的匹配审计。
         </p>
+        <div class="hero-actions">
+          <el-button type="primary" size="large" class="hero-button" @click="goToInvoice">
+            <el-icon><UploadFilled /></el-icon>
+            发票识别
+          </el-button>
+          <el-button size="large" class="hero-button secondary" @click="goToAudit">
+            <el-icon><Document /></el-icon>
+            合同审计
+          </el-button>
+        </div>
       </div>
     </section>
 
@@ -39,6 +50,7 @@
                 class="entry-button"
                 @click="goToInvoice"
               >
+                <el-icon><UploadFilled /></el-icon>
                 开始发票识别
               </el-button>
             </div>
@@ -66,6 +78,7 @@
                 class="entry-button"
                 @click="goToAudit"
               >
+                <el-icon><Document /></el-icon>
                 开始合同审计
               </el-button>
             </div>
@@ -127,6 +140,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { UploadFilled, Document } from '@element-plus/icons-vue'
 
 const router = useRouter()
 
@@ -201,55 +215,75 @@ onMounted(() => {
 <style scoped>
 .home {
   min-height: 100vh;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef4fb 100%);
 }
 
 .hero-section {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 100px 0 80px;
-  text-align: center;
-  position: relative;
-  overflow: hidden;
-}
-
-.hero-section::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="50" cy="50" r="1" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
-  opacity: 0.3;
+  padding: 32px 24px 12px;
 }
 
 .hero-content {
   max-width: 800px;
   margin: 0 auto;
-  padding: 0 20px;
-  position: relative;
-  z-index: 1;
+  padding: 32px 28px;
+  background: #ffffff;
+  border: 1px solid #e6edf6;
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+}
+
+.hero-kicker {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .hero-title {
-  font-size: 48px;
+  font-size: 40px;
   font-weight: 700;
   margin-bottom: 24px;
   line-height: 1.2;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  color: #172033;
 }
 
 .hero-subtitle {
   font-size: 20px;
   line-height: 1.6;
-  opacity: 0.9;
-  max-width: 600px;
+  color: #5b6575;
+  max-width: 680px;
   margin: 0 auto;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-top: 28px;
+}
+
+.hero-button {
+  min-width: 160px;
+  height: 44px;
+  border-radius: 8px;
+}
+
+.hero-button.secondary {
+  background: #ffffff;
+  border-color: #dbe4f0;
+  color: #172033;
 }
 
 /* 双入口卡片 */
 .entry-section {
-  padding: 80px 0 0;
+  padding: 56px 0 0;
 }
 
 .entry-cards {
@@ -260,14 +294,16 @@ onMounted(() => {
 
 .entry-card {
   margin-bottom: 24px;
-  border-radius: 16px;
-  border: none;
+  border-radius: 8px;
+  border: 1px solid #e6edf6;
   transition: all 0.3s ease;
   height: 100%;
+  background: #ffffff;
 }
 
 .entry-card:hover {
   transform: translateY(-8px);
+  border-color: #d7e2ef;
 }
 
 .invoice-card {
@@ -288,13 +324,13 @@ onMounted(() => {
 
 .entry-content {
   text-align: center;
-  padding: 32px 24px;
+  padding: 28px 24px;
 }
 
 .entry-icon {
   width: 80px;
   height: 80px;
-  border-radius: 20px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -303,17 +339,17 @@ onMounted(() => {
 }
 
 .invoice-icon {
-  background: linear-gradient(135deg, #ECF5FF, #D9ECFF);
+  background: #eef4ff;
 }
 
 .audit-icon {
-  background: linear-gradient(135deg, #F0F9FF, #E1F3D8);
+  background: #eefaf4;
 }
 
 .entry-title {
   font-size: 28px;
   font-weight: 700;
-  color: #303133;
+  color: #172033;
   margin-bottom: 12px;
 }
 
@@ -353,7 +389,7 @@ onMounted(() => {
   min-width: 200px;
   height: 48px;
   font-size: 16px;
-  border-radius: 50px;
+  border-radius: 8px;
 }
 
 .section-header {
@@ -364,7 +400,7 @@ onMounted(() => {
 .section-title {
   font-size: 36px;
   font-weight: 600;
-  color: #303133;
+  color: #172033;
   margin-bottom: 16px;
 }
 
@@ -390,13 +426,14 @@ onMounted(() => {
   height: 280px;
   text-align: center;
   transition: all 0.3s ease;
-  border: none;
-  border-radius: 16px;
+  border: 1px solid #e6edf6;
+  border-radius: 8px;
+  background: #fff;
 }
 
 .feature-card:hover {
   transform: translateY(-8px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
 }
 
 .feature-icon {
@@ -408,7 +445,7 @@ onMounted(() => {
 .feature-title {
   font-size: 24px;
   font-weight: 600;
-  color: #303133;
+  color: #172033;
   margin-bottom: 16px;
 }
 
@@ -419,15 +456,16 @@ onMounted(() => {
 }
 
 .stats-section {
-  background-color: #f8f9fa;
+  background: transparent;
 }
 
 .stat-card {
   height: 140px;
   display: flex;
   align-items: center;
-  border-radius: 12px;
-  border: none;
+  border-radius: 8px;
+  border: 1px solid #e6edf6;
+  background: #fff;
 }
 
 .stat-content {
@@ -448,7 +486,7 @@ onMounted(() => {
 .stat-value {
   font-size: 28px;
   font-weight: 700;
-  color: #303133;
+  color: #172033;
   margin-bottom: 4px;
   line-height: 1;
 }
@@ -460,6 +498,14 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
+  .hero-section {
+    padding: 16px 16px 8px;
+  }
+
+  .hero-content {
+    padding: 24px 18px;
+  }
+
   .hero-title {
     font-size: 32px;
   }
@@ -487,6 +533,10 @@ onMounted(() => {
 
   .entry-button {
     min-width: 160px;
+  }
+
+  .hero-button {
+    min-width: 140px;
   }
 }
 </style>
