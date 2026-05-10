@@ -18,7 +18,7 @@
         <p class="section-subtitle">根据您的需求选择合适的处理方式</p>
       </div>
 
-      <el-row :gutter="32" class="entry-cards">
+      <el-row :gutter="40" class="entry-cards" justify="center">
         <!-- 发票识别 -->
         <el-col :lg="12" :md="24" :sm="24">
           <el-card class="entry-card invoice-card" shadow="hover">
@@ -84,7 +84,7 @@
         <p class="section-subtitle">为企业提供专业的智能审计服务</p>
       </div>
 
-      <el-row :gutter="24" class="features-grid">
+      <el-row :gutter="32" class="features-grid" justify="center">
         <el-col :lg="8" :md="12" :sm="24" v-for="feature in features" :key="feature.id">
           <el-card class="feature-card" shadow="hover">
             <div class="feature-icon">
@@ -106,7 +106,7 @@
         <p class="section-subtitle">实时展示系统运行数据</p>
       </div>
 
-      <el-row :gutter="24" class="stats-grid">
+      <el-row :gutter="32" class="stats-grid" justify="center">
         <el-col :lg="6" :md="12" :sm="24" v-for="stat in statistics" :key="stat.key">
           <el-card class="stat-card">
             <div class="stat-content">
@@ -250,13 +250,14 @@ onMounted(() => {
 
 /* 双入口卡片 */
 .entry-section {
-  padding: 56px 0 0;
+  padding: 64px 0 0;
 }
 
 .entry-cards {
-  max-width: 1100px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 32px;
+  box-sizing: border-box;
 }
 
 .entry-card {
@@ -379,14 +380,15 @@ onMounted(() => {
 
 .features-section,
 .stats-section {
-  padding: 80px 0;
+  padding: 84px 0;
 }
 
 .features-grid,
 .stats-grid {
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 32px;
+  box-sizing: border-box;
 }
 
 .feature-card {

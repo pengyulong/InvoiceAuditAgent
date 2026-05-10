@@ -497,15 +497,114 @@ OCR识别的文字：
             logger.warning(f"读取PDF页数失败: {file_path}, {e}")
             return 1
 
+    @staticmethod
+    def _convert_pdf_page_to_image(pdf_path: str, output_prefix: str, page_no: int, dpi: int = 200) -> Optional[str]:
+        result = subprocess.run(
+            [
+                "pdftoppm",
+                "-png",
+                "-singlefile",
+                "-f",
+                str(page_no),
+                "-l",
+                str(page_no),
+                "-r",
+                str(dpi),
+                pdf_path,
+                output_prefix,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            logger.warning(f"PDF第 {page_no} 页转换失败: {result.stderr}")
+            return None
+
+        image_path = f"{output_prefix}.png"
+        if not os.path.exists(image_path):
+            logger.warning(f"PDF第 {page_no} 页转换后图片不存在: {image_path}")
+            return None
+        return image_path
+
     async def extract_invoice_info(
         self,
         image_path: str,
         progress_callback=None,
         allow_local_fallback: bool = False,
-    ) -> Dict[str, Any]:
-        """从发票图片中提取信息：优先百度增值税发票OCR，失败则通用OCR+DeepSeek结构化"""
+    ) -> Any:
+        """从发票文件中提取信息；PDF会按页展开为多条发票识别结果。"""
         logger.info(f"开始提取发票信息: {image_path}")
 
+        file_ext = os.path.splitext(image_path)[1].lower()
+        if file_ext == ".pdf":
+            page_count = self._get_pdf_page_count(image_path)
+            total_pages = page_count or 1
+            logger.info(f"发票PDF页数: {page_count}, 将按页识别 {total_pages} 页")
+
+            results: List[Dict[str, Any]] = []
+            with tempfile.TemporaryDirectory() as temp_dir:
+                for page_no in range(1, total_pages + 1):
+                    if progress_callback:
+                        await progress_callback(
+                            "invoice_analyzer",
+                            5 + int((page_no - 1) / max(total_pages, 1) * 90),
+                            f"正在识别PDF第 {page_no}/{total_pages} 页..."
+                        )
+
+                    output_prefix = os.path.join(temp_dir, f"invoice_page_{page_no}")
+                    page_image_path = self._convert_pdf_page_to_image(
+                        image_path,
+                        output_prefix,
+                        page_no,
+                        dpi=200,
+                    )
+                    if not page_image_path:
+                        results.append({
+                            "invoice_number": "识别失败",
+                            "error": f"PDF第 {page_no} 页转换失败",
+                            "page_number": page_no,
+                            "page_count": total_pages,
+                        })
+                        continue
+
+                    try:
+                        page_result = await self._extract_invoice_info_single(
+                            page_image_path,
+                            None,
+                            allow_local_fallback=allow_local_fallback,
+                        )
+                    except OCRConfigError:
+                        raise
+                    except AIServiceError as e:
+                        logger.warning(f"PDF第 {page_no} 页识别失败: {e}")
+                        page_result = {
+                            "invoice_number": "识别失败",
+                            "error": str(e),
+                        }
+
+                    page_result["page_number"] = page_no
+                    page_result["page_count"] = total_pages
+                    results.append(page_result)
+
+            if not results:
+                raise AIServiceError("PDF未生成任何可识别页面")
+
+            return results
+
+        return await self._extract_invoice_info_single(
+            image_path,
+            progress_callback,
+            allow_local_fallback=allow_local_fallback,
+        )
+
+    async def _extract_invoice_info_single(
+        self,
+        image_path: str,
+        progress_callback=None,
+        allow_local_fallback: bool = False,
+    ) -> Dict[str, Any]:
+        """从单页发票图片中提取信息：优先百度增值税发票OCR，失败则通用OCR+DeepSeek结构化。"""
         try:
             raw_text = ""
             parsed_result: Dict[str, Any] = {}
@@ -643,8 +742,8 @@ OCR识别的文字：
             return await asyncio.to_thread(self._run_tesseract_ocr, file_path)
 
         page_count = self._get_pdf_page_count(file_path)
-        page_limit = min(page_count or 1, settings.max_invoice_ocr_pages)
-        logger.info(f"发票PDF页数: {page_count}, OCR页数: {page_limit}")
+        page_limit = page_count or 1
+        logger.info(f"发票PDF页数: {page_count}, 本地OCR页数: {page_limit}")
 
         texts: List[str] = []
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -657,31 +756,8 @@ OCR识别的文字：
                     )
 
                 output_prefix = os.path.join(temp_dir, f"invoice_page_{page_no}")
-                result = subprocess.run(
-                    [
-                        "pdftoppm",
-                        "-png",
-                        "-singlefile",
-                        "-f",
-                        str(page_no),
-                        "-l",
-                        str(page_no),
-                        "-r",
-                        "200",
-                        file_path,
-                        output_prefix,
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=120,
-                )
-                if result.returncode != 0:
-                    logger.warning(f"发票第 {page_no} 页转换失败: {result.stderr}")
-                    continue
-
-                image_path = f"{output_prefix}.png"
-                if not os.path.exists(image_path):
-                    logger.warning(f"发票第 {page_no} 页转换后图片不存在: {image_path}")
+                image_path = self._convert_pdf_page_to_image(file_path, output_prefix, page_no, dpi=200)
+                if not image_path:
                     continue
 
                 try:
@@ -692,8 +768,6 @@ OCR识别的文字：
 
                 if page_text.strip():
                     texts.append(f"【第 {page_no} 页】\n{page_text.strip()}")
-                    if self._invoice_text_has_enough_fields("\n".join(texts)):
-                        break
 
         return "\n\n".join(texts)
 

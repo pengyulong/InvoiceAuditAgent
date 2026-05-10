@@ -14,8 +14,8 @@
     </div>
 
     <div class="main-content">
-      <el-row :gutter="24" class="upload-layout">
-        <el-col :lg="12" :md="24" :sm="24" class="upload-col">
+      <el-row :gutter="32" class="upload-layout" justify="center">
+        <el-col :lg="14" :md="24" :sm="24" class="upload-col">
           <el-card class="upload-card" shadow="hover">
             <template #header>
               <div class="card-header">
@@ -129,7 +129,7 @@
           </el-card>
         </el-col>
 
-        <el-col :lg="12" :md="24" :sm="24" class="upload-col">
+        <el-col :lg="10" :md="24" :sm="24" class="upload-col">
           <el-card class="instruction-card" shadow="hover">
             <template #header>
               <div class="card-header">
@@ -377,6 +377,9 @@ const uploadAndStart = async () => {
   border-radius: 8px;
   background: #fff;
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.04);
+  max-width: 1440px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .header-content {
@@ -398,9 +401,10 @@ const uploadAndStart = async () => {
 
 .main-content {
   margin-top: 24px;
-  max-width: 1280px;
+  max-width: 1440px;
   margin-left: auto;
   margin-right: auto;
+  padding: 0 8px 32px;
 }
 
 .upload-layout {
@@ -417,6 +421,7 @@ const uploadAndStart = async () => {
   border-radius: 8px;
   background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
   width: 100%;
+  height: 100%;
 }
 
 .card-header {
@@ -444,7 +449,7 @@ const uploadAndStart = async () => {
   width: 100%;
   border: 1.5px dashed #c7d3e4;
   border-radius: 8px;
-  padding: 28px 24px;
+  padding: 36px 28px;
   transition: all 0.3s ease;
   background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
 }
@@ -459,7 +464,7 @@ const uploadAndStart = async () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
+  min-height: 240px;
 }
 
 .upload-placeholder,
@@ -634,6 +639,7 @@ const uploadAndStart = async () => {
   border-radius: 8px;
   background: #fff;
   width: 100%;
+  height: 100%;
 }
 
 .instruction-content {

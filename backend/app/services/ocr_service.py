@@ -72,20 +72,41 @@ class OcrService:
 
                 try:
                     async def ocr_progress(agent_name, pct, msg):
+                        overall_progress = min(
+                            99,
+                            int((i / total) * 100 + (pct / 100) * (100 / total))
+                        ) if total > 0 else pct
+                        self.active_tasks[task_id].update({
+                            "progress": overall_progress,
+                            "current_step": msg,
+                        })
+                        await websocket_manager.send_progress(task_id, {
+                            "progress": overall_progress,
+                            "current_step": step_name,
+                            "step_id": "ocr_processing",
+                            "message": msg,
+                        })
                         await websocket_manager.send_log(task_id, msg, "info")
 
-                    result = await ai_service.extract_invoice_info(
+                    extracted = await ai_service.extract_invoice_info(
                         file_path,
                         ocr_progress,
                         allow_local_fallback=allow_local_fallback,
                     )
-                    result["source_file"] = file_path
-                    result["file_name"] = file_name
-                    results.append(result)
+                    extracted_results = extracted if isinstance(extracted, list) else [extracted]
+                    for result in extracted_results:
+                        result["source_file"] = file_path
+                        page_number = result.get("page_number")
+                        if page_number:
+                            result["file_name"] = f"{file_name} 第{page_number}页"
+                        else:
+                            result["file_name"] = file_name
+                        results.append(result)
 
+                    success_pages = sum(1 for r in extracted_results if "error" not in r)
                     await websocket_manager.send_log(task_id,
                         f"[{i + 1}/{total}] 识别完成: {file_name} "
-                        f"(发票号码: {result.get('invoice_number', '未识别')})", "success")
+                        f"(成功 {success_pages}/{len(extracted_results)})", "success")
 
                 except OCRConfigError as e:
                     logger.error(f"OCR配置不可用: {file_path}, {e}")
@@ -111,11 +132,12 @@ class OcrService:
             elapsed = time.time() - start_time
             success_count = sum(1 for r in results if "error" not in r)
 
+            recognized_total = len(results)
             result_data = {
                 "invoices": results,
-                "total_count": len(results),
+                "total_count": recognized_total,
                 "success_count": success_count,
-                "fail_count": len(results) - success_count,
+                "fail_count": recognized_total - success_count,
                 "processing_time": round(elapsed, 1),
             }
 
@@ -134,15 +156,15 @@ class OcrService:
                 "progress": 100,
                 "step_id": "completed",
                 "current_step": "识别完成",
-                "message": f"OCR识别完成 - 成功 {success_count}/{total}，耗时 {elapsed:.1f} 秒",
+                "message": f"OCR识别完成 - 成功 {success_count}/{recognized_total}，耗时 {elapsed:.1f} 秒",
             })
             await websocket_manager.send_completed(task_id, {
                 "task_id": task_id,
                 "status": "completed",
                 "summary": {
-                    "total": total,
+                    "total": recognized_total,
                     "success": success_count,
-                    "fail": len(results) - success_count,
+                    "fail": recognized_total - success_count,
                     "elapsed": elapsed,
                 },
             })
